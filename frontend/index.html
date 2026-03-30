@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockScanner | EMA Signals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #fffaf0;
+            --ink: #0f172a;
+            --muted: #475569;
+            --card: #ffffff;
+            --line: #dbe3ef;
+            --accent: #0f766e;
+            --accent-strong: #115e59;
+            --warm: #f59e0b;
+            --danger: #dc2626;
+            --ok: #16a34a;
+            --hero-grad: radial-gradient(circle at 15% 20%, #fde68a 0%, #fef3c7 25%, #fffaf0 60%);
+            --shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.08);
+            --shadow-hard: 0 20px 50px rgba(15, 23, 42, 0.18);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'IBM Plex Sans', sans-serif;
+            color: var(--ink);
+            background: var(--hero-grad);
+            min-height: 100vh;
+            line-height: 1.4;
+        }
+
+        .shell {
+            width: min(1240px, 100% - 2rem);
+            margin: 0 auto;
+            padding: 2rem 0 2.5rem;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #0f172a 0%, #1f2937 65%, #115e59 100%);
+            color: #f8fafc;
+            border-radius: 22px;
+            padding: 1.75rem;
+            box-shadow: var(--shadow-hard);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::after {
+            content: '';
+            position: absolute;
+            right: -120px;
+            top: -120px;
+            width: 280px;
+            height: 280px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(245, 158, 11, 0.8), rgba(245, 158, 11, 0));
+            pointer-events: none;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 0.9rem;
+        }
+
+        h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(1.8rem, 3vw, 3.1rem);
+            line-height: 1.1;
+            max-width: 14ch;
+            margin-bottom: 0.9rem;
+        }
+
+        .subtitle {
+            color: #dbeafe;
+            font-size: 1.02rem;
+            max-width: 60ch;
+        }
+
+        .hero-meta {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(120px, 1fr));
+            gap: 0.75rem;
+            margin-top: 1.3rem;
+        }
+
+        .meta-tile {
+            padding: 0.9rem;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(4px);
+        }
+
+        .meta-label {
+            display: block;
+            font-size: 0.76rem;
+            color: #bfdbfe;
+            margin-bottom: 0.2rem;
+        }
+
+        .meta-value {
+            font-weight: 700;
+            font-size: 1.04rem;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        .panel {
+            margin-top: 1.2rem;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 1rem;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1.1fr auto auto;
+            gap: 0.6rem;
+            align-items: center;
+        }
+
+        .ticker-input {
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: var(--ink);
+            border-radius: 11px;
+            padding: 0.78rem 0.85rem;
+            font-size: 0.98rem;
+            outline: none;
+            transition: box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .ticker-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18);
+        }
+
+        button {
+            border: none;
+            border-radius: 11px;
+            padding: 0.78rem 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s ease, opacity 0.2s ease, filter 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            filter: saturate(1.05);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #f8fafc;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .status-row {
+            margin-top: 0.65rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .live-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--ok);
+            display: inline-block;
+            box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+            animation: pulse 1.8s infinite;
+            margin-right: 0.4rem;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55); }
+            70% { box-shadow: 0 0 0 9px rgba(22, 163, 74, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+        }
+
+        .loading {
+            margin-top: 1.3rem;
+            text-align: center;
+            color: var(--muted);
+            font-size: 1rem;
+        }
+
+        .error {
+            margin-top: 1.2rem;
+            background: #fee2e2;
+            color: #7f1d1d;
+            border: 1px solid #fecaca;
+            border-radius: 12px;
+            padding: 0.95rem;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .signals-grid {
+            margin-top: 1.2rem;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.95rem;
+        }
+
+        .signal-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 1rem;
+            box-shadow: var(--shadow-soft);
+            animation: reveal 0.35s ease forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .signal-card:nth-child(2n) { animation-delay: 0.06s; }
+        .signal-card:nth-child(3n) { animation-delay: 0.12s; }
+
+        @keyframes reveal {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .ticker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+            margin-bottom: 0.8rem;
+            padding-bottom: 0.65rem;
+            border-bottom: 1px dashed #cbd5e1;
+        }
+
+        .ticker-name {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent-strong);
+        }
+
+        .current-price {
+            font-size: 1.04rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .ema-section {
+            margin-bottom: 0.7rem;
+        }
+
+        .ema-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 0.97rem;
+            margin-bottom: 0.45rem;
+            color: #1e293b;
+        }
+
+        .ema-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.86rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .ema-table th {
+            background: #0f766e;
+            color: #f8fafc;
+            padding: 0.43rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .ema-table td {
+            padding: 0.43rem;
+            border-bottom: 1px solid #edf2f7;
+        }
+
+        .ema-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .ema-name {
+            font-weight: 600;
+            color: #0f172a;
+            min-width: 68px;
+        }
+
+        .ema-period {
+            text-align: center;
+            min-width: 86px;
+            background: #f8fafc;
+        }
+
+        .prob-good {
+            color: var(--ok);
+            font-weight: 700;
+        }
+
+        .prob-bad {
+            color: var(--danger);
+            font-weight: 700;
+        }
+
+        .prob-neutral {
+            color: #64748b;
+            font-weight: 700;
+        }
+
+        .stats {
+            margin-top: 0.2rem;
+            color: #475569;
+            font-size: 0.76rem;
+        }
+
+        footer {
+            margin-top: 1.4rem;
+            text-align: center;
+            font-size: 0.83rem;
+            color: #64748b;
+        }
+
+        @media (max-width: 980px) {
+            .signals-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .shell {
+                width: min(1240px, 100% - 1rem);
+                padding-top: 1rem;
+            }
+
+            .hero {
+                border-radius: 16px;
+                padding: 1.1rem;
+            }
+
+            h1 {
+                max-width: none;
+            }
+
+            .hero-meta {
+                grid-template-columns: 1fr;
+            }
+
+            .panel {
+                padding: 0.8rem;
+            }
+
+            .controls {
+                grid-template-columns: 1fr;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .ticker-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .ema-table {
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="hero">
+            <span class="badge">EMA Intelligence Engine</span>
+            <h1>Trade pullbacks with clean probability context</h1>
+            <p class="subtitle">StockScanner tracks top-down EMA touches and scores response quality for daily and weekly horizons across 5-year and 10-year windows.</p>
+            <div class="hero-meta">
+                <div class="meta-tile">
+                    <span class="meta-label">Universe</span>
+                    <span class="meta-value" id="meta-tickers">-</span>
+                </div>
+                <div class="meta-tile">
+                    <span class="meta-label">Last Data Update</span>
+                    <span class="meta-value" id="meta-updated">-</span>
+                </div>
+                <div class="meta-tile">
+                    <span class="meta-label">Signal Cards</span>
+                    <span class="meta-value" id="meta-count">-</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="controls">
+                <input
+                    id="ticker-input"
+                    class="ticker-input"
+                    type="text"
+                    placeholder="Type ticker, e.g. MSFT"
+                >
+                <button class="btn-primary" onclick="loadTickerFromInput()">Check Ticker</button>
+                <button class="btn-secondary" onclick="refreshAndLoadSignals()">Refresh Universe</button>
+            </div>
+            <div class="status-row">
+                <div><span class="live-dot"></span>Auto-sync enabled</div>
+                <div id="status-text">Ready</div>
+            </div>
+        </section>
+
+        <div id="signals-container"></div>
+
+        <footer>
+            <p>StockScanner 2026 | EMA touch analytics for rapid validation.</p>
+        </footer>
+    </main>
+
+    <script>
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setStatus(text) {
+            const status = document.getElementById('status-text');
+            status.textContent = text;
+        }
+
+        function formatLastUpdate(isoString) {
+            if (!isoString) {
+                return 'Not loaded';
+            }
+            const date = new Date(isoString);
+            if (Number.isNaN(date.getTime())) {
+                return 'Unknown';
+            }
+            return date.toLocaleString();
+        }
+
+        function updateMeta(signals, lastUpdate) {
+            document.getElementById('meta-count').textContent = Array.isArray(signals) ? signals.length : 0;
+            document.getElementById('meta-tickers').textContent = Array.isArray(signals) ? signals.map((s) => s.ticker).join(', ') : '-';
+            document.getElementById('meta-updated').textContent = formatLastUpdate(lastUpdate);
+        }
+
+        async function loadSignals() {
+            const container = document.getElementById('signals-container');
+            container.innerHTML = '<div class="loading">Loading market signals...</div>';
+            setStatus('Loading universe...');
+
+            try {
+                const response = await fetch('/api/signals');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                displaySignals(data.signals);
+                updateMeta(data.signals, data.last_update);
+                setStatus('Universe synced');
+            } catch (error) {
+                console.error('Error:', error);
+                container.innerHTML = '<div class="error">Error loading signals</div>';
+                setStatus('Load failed');
+            }
+        }
+
+        async function refreshAndLoadSignals() {
+            setStatus('Refreshing from source...');
+            try {
+                await fetch('/api/refresh', { method: 'POST' });
+            } catch (error) {
+                console.error('Refresh error:', error);
+            }
+            await loadSignals();
+        }
+
+        async function loadTickerFromInput() {
+            const container = document.getElementById('signals-container');
+            const input = document.getElementById('ticker-input');
+            const ticker = (input.value || '').trim().toUpperCase();
+
+            if (!ticker) {
+                container.innerHTML = '<div class="error">Please enter a ticker</div>';
+                return;
+            }
+
+            container.innerHTML = `<div class="loading">Loading ${escapeHtml(ticker)}...</div>`;
+            setStatus(`Loading ${ticker}...`);
+
+            try {
+                const response = await fetch(`/api/signals/${encodeURIComponent(ticker)}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.error) {
+                    container.innerHTML = `<div class="error">${escapeHtml(data.error)}</div>`;
+                    setStatus('Ticker not found');
+                    return;
+                }
+
+                displaySignals([data]);
+                updateMeta([data], new Date().toISOString());
+                setStatus(`Showing ${ticker}`);
+            } catch (error) {
+                console.error('Error:', error);
+                container.innerHTML = '<div class="error">Error loading ticker signal</div>';
+                setStatus('Ticker load failed');
+            }
+        }
+
+        function getProbColor(probability) {
+            if (probability >= 75) return 'prob-good';
+            if (probability <= 25) return 'prob-bad';
+            return 'prob-neutral';
+        }
+
+        function emaRow(label, s1, s2) {
+            if (!s1 || !s2) return '';
+            return `
+                <tr>
+                    <td class="ema-name">${label}</td>
+                    <td class="ema-period">
+                        <span class="${getProbColor(s1.probability)}">${s1.probability}%</span>
+                        <div class="stats">${s1.positive} up | ${s1.negative} down</div>
+                    </td>
+                    <td class="ema-period">
+                        <span class="${getProbColor(s2.probability)}">${s2.probability}%</span>
+                        <div class="stats">${s2.positive} up | ${s2.negative} down</div>
+                    </td>
+                </tr>`;
+        }
+
+        function tfTable(tfData, title) {
+            const p1 = tfData.period_1_5y;
+            const p2 = tfData.period_10y;
+            return `
+                <div class="ema-section">
+                    <div class="ema-title">${title}</div>
+                    <table class="ema-table">
+                        <thead>
+                            <tr>
+                                <th>EMA</th>
+                                <th>1-5Y</th>
+                                <th>10Y</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${emaRow('EMA 20',  p1.ema_20,  p2.ema_20)}
+                            ${emaRow('EMA 50',  p1.ema_50,  p2.ema_50)}
+                            ${emaRow('EMA 100', p1.ema_100, p2.ema_100)}
+                            ${emaRow('EMA 200', p1.ema_200, p2.ema_200)}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        function renderSignalCard(signal) {
+            return `
+                <article class="signal-card">
+                    <div class="ticker-header">
+                        <span class="ticker-name">${escapeHtml(signal.ticker)}</span>
+                        <span class="current-price">$${escapeHtml(signal.current_price)}</span>
+                    </div>
+                    ${tfTable(signal.daily, 'Daily Resolution')}
+                    ${tfTable(signal.weekly, 'Weekly Resolution')}
+                </article>
+            `;
+        }
+
+        function displaySignals(signals) {
+            const container = document.getElementById('signals-container');
+            if (!signals || signals.length === 0) {
+                container.innerHTML = '<div class="error">No signals available</div>';
+                return;
+            }
+
+            const html = signals.map(renderSignalCard).join('');
+            container.innerHTML = `<section class="signals-grid">${html}</section>`;
+        }
+
+        window.addEventListener('load', () => {
+            loadSignals();
+
+            const input = document.getElementById('ticker-input');
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    loadTickerFromInput();
+                }
+            });
+
+            setInterval(() => {
+                loadSignals();
+            }, 60000);
+        });
+    </script>
+</body>
+</html>
