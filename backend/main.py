@@ -13,6 +13,11 @@ def get_yfinance():
 
 app = FastAPI()
 
+# Health check - простой эндпоинт для проверки, что app работает
+@app.get("/health")
+def health():
+    return {"status": "ok", "version": "1.0"}
+
 frontend_path = str(Path(__file__).parent.parent / "frontend")
 print(f"Frontend path: {frontend_path}")
 
