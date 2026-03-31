@@ -605,11 +605,11 @@
             const type = emaInfo.signal_type;
             const dist = `<span class="dist-pct">${emaInfo.distance_pct}%</span>`;
             if (type === 'entry_zone' && prob1_5y >= 65)
-                return `<span class="ema-badge badge-entry">Точка входа</span>${dist}`;
+                return `<span class="ema-badge badge-entry">Entry Point</span>${dist}`;
             if (type === 'approaching')
-                return `<span class="ema-badge badge-approaching">Подходит к уровню</span>${dist}`;
+                return `<span class="ema-badge badge-approaching">Approaching</span>${dist}`;
             if (type === 'watching')
-                return `<span class="ema-badge badge-watching">Наблюдаем</span>${dist}`;
+                return `<span class="ema-badge badge-watching">Watching</span>${dist}`;
             return emaInfo.distance_pct !== undefined ? dist : '';
         }
 
@@ -675,19 +675,19 @@
                 const names = entries
                     .filter(([k, v]) => v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65)
                     .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-entry">Точка входа — ${names.join(', ')}</div>`;
+                banner = `<div class="active-signal-banner banner-entry">Entry Point — ${names.join(', ')}</div>`;
             } else if (hasWatching) {
                 cardClass += ' has-watching';
                 const names = entries
                     .filter(([, v]) => v.signal_type === 'watching')
                     .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-watching">Наблюдаем — ${names.join(', ')}</div>`;
+                banner = `<div class="active-signal-banner banner-watching">Watching — ${names.join(', ')}</div>`;
             } else if (hasApproaching) {
                 cardClass += ' has-approaching';
                 const names = entries
                     .filter(([, v]) => v.signal_type === 'approaching')
                     .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-approaching">Подходит к уровню — ${names.join(', ')}</div>`;
+                banner = `<div class="active-signal-banner banner-approaching">Approaching — ${names.join(', ')}</div>`;
             }
 
             return `
