@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 import yfinance as yf
 from pathlib import Path
 import pandas as pd
@@ -466,7 +465,11 @@ def get_signal_by_ticker(ticker: str):
 # Не монтируем статику на Vercel (она обслуживается отдельно через public/)
 # На локальной машине статика монтируется если это не serverless
 if not os.getenv("VERCEL"):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
+    try:
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
+    except Exception as e:
+        print(f"⚠️  Could not mount static files: {e}")
 
 @app.on_event("startup")
 async def startup_event():
