@@ -34,6 +34,7 @@ SERVER_PORT = int(os.getenv("PORT", "8001"))
 
 DEFAULT_TICKERS = ["MSFT", "AAPL", "GOOGL", "TSLA", "AMZN"]
 TICKERS_FILE_PATH = Path(__file__).parent.parent / "tickers.csv"
+SIGNALS_JSON_PATH = Path(__file__).parent.parent / "data" / "signals.json"
 
 
 def normalize_ohlc_columns(df):
@@ -448,6 +449,27 @@ def refresh_signals():
         signals_cache['last_update'] = pd.Timestamp.now()
 
 
+def load_signals_from_file():
+    """Загружает сигналы из data/signals.json если файл существует."""
+    if not SIGNALS_JSON_PATH.exists():
+        return False
+    try:
+        import json
+        with open(SIGNALS_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        signals = data.get("signals", [])
+        last_update_str = data.get("last_update")
+        last_update = pd.Timestamp(last_update_str) if last_update_str else pd.Timestamp.now()
+        with cache_lock:
+            signals_cache['signals'] = signals
+            signals_cache['last_update'] = last_update
+        print(f"Loaded {len(signals)} signals from {SIGNALS_JSON_PATH}")
+        return True
+    except Exception as e:
+        print(f"Failed to load signals.json: {e}")
+        return False
+
+
 def should_refresh_cache():
     """Проверяет, нужно ли обновлять кэш сигналов."""
     with cache_lock:
@@ -461,9 +483,11 @@ def should_refresh_cache():
 
 @app.get("/api/signals")
 def get_signals():
-    """Возвращает сигналы из кэша, автоматически обновляя при необходимости или если кэш устарел"""
+    """Возвращает сигналы: сначала из файла, иначе из кэша или пересчитывает."""
     if should_refresh_cache():
-        refresh_signals()
+        loaded = load_signals_from_file()
+        if not loaded:
+            refresh_signals()
 
     with cache_lock:
         last_update = signals_cache['last_update']
@@ -475,8 +499,10 @@ def get_signals():
 
 @app.post("/api/refresh")
 def refresh_signals_endpoint():
-    """Обновить сигналы"""
-    refresh_signals()
+    """Обновить сигналы: сначала из файла, иначе через yfinance."""
+    loaded = load_signals_from_file()
+    if not loaded:
+        refresh_signals()
     with cache_lock:
         last_update = signals_cache['last_update']
         last_update_iso = last_update.isoformat() if last_update is not None else None
