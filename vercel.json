@@ -1,0 +1,5 @@
+﻿{
+  "public": true,
+  "buildCommand": "echo 'No build needed'",
+  "outputDirectory": "public"
+}

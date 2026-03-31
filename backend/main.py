@@ -463,7 +463,10 @@ def get_signal_by_ticker(ticker: str):
         return signal
     return {"error": f"Could not get data for {ticker}"}
 
-app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
+# Не монтируем статику на Vercel (она обслуживается отдельно через public/)
+# На локальной машине статика монтируется если это не serverless
+if not os.getenv("VERCEL"):
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="static")
 
 @app.on_event("startup")
 async def startup_event():
