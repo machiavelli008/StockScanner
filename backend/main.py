@@ -20,8 +20,9 @@ cache_lock = threading.Lock()
 CACHE_EXPIRY_MINUTES = 5  # Кэш устаревает через 5 минут
 AUTO_REFRESH_INTERVAL_SECONDS = 300  # Автообновление каждые 5 минут
 background_thread_stop = False  # Флаг для остановки фонового потока
-ENABLE_STARTUP_REFRESH = os.getenv("ENABLE_STARTUP_REFRESH", "1") == "1"
-ENABLE_BACKGROUND_REFRESH = os.getenv("ENABLE_BACKGROUND_REFRESH", "1") == "1"
+# На Vercel отключаем startup refresh (таймаут), но включаем по требованию
+ENABLE_STARTUP_REFRESH = os.getenv("ENABLE_STARTUP_REFRESH", "0") == "1" if not os.getenv("VERCEL") else False
+ENABLE_BACKGROUND_REFRESH = os.getenv("ENABLE_BACKGROUND_REFRESH", "1") == "1" if not os.getenv("VERCEL") else False
 SERVER_PORT = int(os.getenv("PORT", "8001"))
 
 DEFAULT_TICKERS = ["MSFT", "AAPL", "GOOGL", "TSLA", "AMZN"]
@@ -470,12 +471,18 @@ if not os.getenv("VERCEL"):
 
 @app.on_event("startup")
 async def startup_event():
-    """Загружаем сигналы при старте"""
+    """Загружаем сигналы при старте (только локально, не на Vercel)"""
     if ENABLE_STARTUP_REFRESH:
-        print("\n=== Loading signals on startup ===")
-        refresh_signals()
+        try:
+            print("\n=== Loading signals on startup ===")
+            refresh_signals()
+        except Exception as e:
+            print(f"\n⚠️  Startup refresh failed: {e}")
+            print("App will fetch signals on first API call")
     else:
-        print("\n=== Startup refresh is disabled by ENABLE_STARTUP_REFRESH ===")
+        print("\n=== Startup refresh is disabled ===")
+        if os.getenv("VERCEL"):
+            print("(Running on Vercel - startup refresh disabled to prevent timeout)")
 
 if __name__ == "__main__":
     def auto_refresh_background():

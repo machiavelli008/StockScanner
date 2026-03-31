@@ -6,11 +6,19 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Импортируем FastAPI app, но без монтирования статики
-from backend.main import (
-    app, get_signals, refresh_signals_endpoint, 
-    get_signal_by_ticker, startup_event
-)
+# На Vercel импортируем только функции и переменные, БЕЗ инициализации пути для статики
+# чтобы избежать ошибок при startup
+try:
+    from backend.main import app as backend_app
+    # FastAPI app готов к использованию
+    app = backend_app
+except Exception as e:
+    print(f"Error importing backend: {e}")
+    # Fallback - если импорт падает, создаём минимальный app
+    from fastapi import FastAPI
+    app = FastAPI()
+    
+    @app.get("/api/health")
+    def health():
+        return {"status": "error", "message": str(e)}
 
-# На Vercel монтировать статику нельзя, только API
-# Статика будет раздаваться из public/ папки через vercel.json
