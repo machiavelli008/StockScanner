@@ -322,7 +322,7 @@ def get_stock_signals(ticker):
             current_ema[col] = {
                 'value': round(ema_val, 2),
                 'distance_pct': dist_pct,
-                'is_near': dist_pct <= 1.0,
+                'is_near': dist_pct <= 1.0 and current_price >= ema_val,
                 'price_above': current_price >= ema_val,
             }
 
