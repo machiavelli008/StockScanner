@@ -329,24 +329,33 @@ def get_stock_signals(ticker):
             dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
             price_above = current_price >= ema_val
 
+            signal_type = None
+
             if price_above:
+                # Цена выше EMA — движение сверху вниз
                 if dist_pct <= 0.15:
-                    signal_type = 'entry_zone'   # фактическое касание сверху
+                    signal_type = 'entry_zone'  # касание уровня
                 elif dist_pct <= 1.0:
                     signal_type = 'approaching'  # подходит к уровню
-                else:
-                    signal_type = None
             else:
-                dist_below = ema_val - current_price
-                if dist_pct <= 0.15:
-                    signal_type = 'entry_zone'   # фактическое касание снизу
-                elif dist_below <= current_atr:
-                    # Наблюдаем только если цена не ушла к более низкой EMA
-                    lower_emas = [v for k, v in ema_values.items() if v < ema_val]
-                    touches_lower = any(current_price <= lv for lv in lower_emas)
-                    signal_type = None if touches_lower else 'watching'
-                else:
-                    signal_type = None
+                # Цена ниже EMA
+                lower_emas = [v for k, v in ema_values.items() if v < ema_val]
+                touches_lower = any(current_price <= lv for lv in lower_emas)
+
+                if not touches_lower:
+                    if dist_pct <= 0.15:
+                        signal_type = 'entry_zone'  # касание снизу
+                    elif dist_pct <= 2.0:
+                        if period == 200:
+                            # EMA200: Watching в любом направлении (зона консолидации)
+                            signal_type = 'watching'
+                        else:
+                            # EMA20/50/100: Watching только если вчера цена была выше
+                            # (цена только что упала, а не поднимается снизу)
+                            prev_close = float(hist_daily['Close'].iloc[-2])
+                            prev_ema = float(hist_daily[col].iloc[-2])
+                            if prev_close >= prev_ema:
+                                signal_type = 'watching'
 
             current_ema[col] = {
                 'value': round(ema_val, 2),

@@ -605,7 +605,7 @@
             const type = emaInfo.signal_type;
             const dist = `<span class="dist-pct">${emaInfo.distance_pct}%</span>`;
             if (type === 'entry_zone' && prob1_5y >= 65)
-                return `<span class="ema-badge badge-entry">Entry Point</span>${dist}`;
+                return `<span class="ema-badge badge-entry">Ready to Buy</span>${dist}`;
             if (type === 'approaching')
                 return `<span class="ema-badge badge-approaching">Approaching</span>${dist}`;
             if (type === 'watching')
@@ -675,7 +675,7 @@
                 const names = entries
                     .filter(([k, v]) => v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65)
                     .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-entry">Entry Point — ${names.join(', ')}</div>`;
+                banner = `<div class="active-signal-banner banner-entry">Ready to Buy — ${names.join(', ')}</div>`;
             } else if (hasWatching) {
                 cardClass += ' has-watching';
                 const names = entries
