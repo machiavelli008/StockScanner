@@ -1,11 +1,15 @@
 from fastapi import FastAPI
-import yfinance as yf
 from pathlib import Path
 import pandas as pd
 import numpy as np
 import threading
 import time
 import os
+
+# Ленивый импорт yfinance - только когда нужен
+def get_yfinance():
+    import yfinance as yf
+    return yf
 
 app = FastAPI()
 
@@ -267,6 +271,7 @@ def get_stock_signals(ticker):
     try:
         print(f"\nDownloading data for {ticker}...")
         
+        yf = get_yfinance()
         hist_daily = yf.download(ticker, period="10y", interval="1d", progress=False, auto_adjust=False)
         hist_weekly = yf.download(ticker, period="10y", interval="1wk", progress=False, auto_adjust=False)
 
