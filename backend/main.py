@@ -426,12 +426,20 @@ def refresh_signals():
 
     tickers = load_tickers()
     signals = []
-    
+
     print("\n=== Starting analysis ===")
-    for ticker in tickers:
-        signal = get_stock_signals(ticker)
-        if signal:
-            signals.append(signal)
+    for i, ticker in enumerate(tickers):
+        if i > 0:
+            time.sleep(3)  # пауза между тикерами чтобы не получить rate limit
+        # до 3 попыток при rate limit
+        for attempt in range(3):
+            signal = get_stock_signals(ticker)
+            if signal is not None:
+                signals.append(signal)
+                break
+            if attempt < 2:
+                print(f"Retrying {ticker} in 10s... (attempt {attempt + 2}/3)")
+                time.sleep(10)
     
     print(f"\n=== Analysis complete! Found {len(signals)} signals ===\n")
     
