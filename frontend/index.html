@@ -657,9 +657,10 @@
 
         function renderSignalCard(signal) {
             const ema = signal.current_ema || {};
+            const emaW = signal.current_ema_weekly || ema;
 
-            // Определяем наивысший приоритет сигнала для карточки
-            const entries = Object.entries(ema);
+            // Определяем наивысший приоритет сигнала для карточки (daily + weekly)
+            const entries = [...Object.entries(ema), ...Object.entries(emaW)];
             const dailyProbs = signal.daily && signal.daily.period_1_5y || {};
 
             const hasEntry = entries.some(([k, v]) =>
@@ -698,7 +699,7 @@
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>
                     </div>
                     ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema)}
-                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema)}
+                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema_weekly || signal.current_ema)}
                 </article>
             `;
         }

@@ -91,6 +91,50 @@ def load_tickers():
         print(f"Failed to load tickers.csv: {e}. Using default tickers.")
         return DEFAULT_TICKERS.copy()
 
+def compute_current_ema_signals(hist, current_price, ema_periods):
+    """Считает signal_type для каждой EMA на основе текущей цены и данных таймфрейма."""
+    current_atr = float(hist['atr'].iloc[-1])
+    ema_values = {
+        f'ema_{p}': float(hist[f'ema_{p}'].iloc[-1])
+        for p in ema_periods
+    }
+    result = {}
+    for period in ema_periods:
+        col = f'ema_{period}'
+        ema_val = ema_values[col]
+        dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
+        price_above = current_price >= ema_val
+        signal_type = None
+
+        if price_above:
+            if dist_pct <= 0.15:
+                signal_type = 'entry_zone'
+            elif dist_pct <= 1.0:
+                signal_type = 'approaching'
+        else:
+            lower_emas = [v for k, v in ema_values.items() if v < ema_val]
+            touches_lower = any(current_price <= lv for lv in lower_emas)
+            if not touches_lower:
+                if dist_pct <= 0.15:
+                    signal_type = 'entry_zone'
+                elif dist_pct <= 2.0:
+                    if period == 200:
+                        signal_type = 'watching'
+                    else:
+                        prev_close = float(hist['Close'].iloc[-2])
+                        prev_ema = float(hist[col].iloc[-2])
+                        if prev_close >= prev_ema:
+                            signal_type = 'watching'
+
+        result[col] = {
+            'value': round(ema_val, 2),
+            'distance_pct': dist_pct,
+            'price_above': price_above,
+            'signal_type': signal_type,
+        }
+    return result
+
+
 def calculate_atr(data, period=14):
     """Расчет ATR"""
     data['tr'] = np.maximum(
@@ -313,61 +357,15 @@ def get_stock_signals(ticker):
         
         print(f"Analyzing touches for {ticker}...")
         
-        # Текущие значения EMA и плашки (по дневным данным)
-        current_atr = float(hist_daily['atr'].iloc[-1])
-
-        # Сначала собираем все значения EMA чтобы проверять "нижние" уровни
-        ema_values = {
-            f'ema_{p}': float(hist_daily[f'ema_{p}'].iloc[-1])
-            for p in ema_periods
-        }
-
-        current_ema = {}
-        for period in ema_periods:
-            col = f'ema_{period}'
-            ema_val = ema_values[col]
-            dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
-            price_above = current_price >= ema_val
-
-            signal_type = None
-
-            if price_above:
-                # Цена выше EMA — движение сверху вниз
-                if dist_pct <= 0.15:
-                    signal_type = 'entry_zone'  # касание уровня
-                elif dist_pct <= 1.0:
-                    signal_type = 'approaching'  # подходит к уровню
-            else:
-                # Цена ниже EMA
-                lower_emas = [v for k, v in ema_values.items() if v < ema_val]
-                touches_lower = any(current_price <= lv for lv in lower_emas)
-
-                if not touches_lower:
-                    if dist_pct <= 0.15:
-                        signal_type = 'entry_zone'  # касание снизу
-                    elif dist_pct <= 2.0:
-                        if period == 200:
-                            # EMA200: Watching в любом направлении (зона консолидации)
-                            signal_type = 'watching'
-                        else:
-                            # EMA20/50/100: Watching только если вчера цена была выше
-                            # (цена только что упала, а не поднимается снизу)
-                            prev_close = float(hist_daily['Close'].iloc[-2])
-                            prev_ema = float(hist_daily[col].iloc[-2])
-                            if prev_close >= prev_ema:
-                                signal_type = 'watching'
-
-            current_ema[col] = {
-                'value': round(ema_val, 2),
-                'distance_pct': dist_pct,
-                'price_above': price_above,
-                'signal_type': signal_type,
-            }
+        # Плашки считаются отдельно для дневного и недельного таймфреймов
+        current_ema_daily = compute_current_ema_signals(hist_daily, current_price, ema_periods)
+        current_ema_weekly = compute_current_ema_signals(hist_weekly, current_price, ema_periods)
 
         result = {
             "ticker": ticker,
             "current_price": round(current_price, 2),
-            "current_ema": current_ema,
+            "current_ema": current_ema_daily,
+            "current_ema_weekly": current_ema_weekly,
             "daily": {
                 "period_1_5y": {},
                 "period_10y": {}
