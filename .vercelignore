@@ -1,0 +1,18 @@
+# Heavy/unnecessary files for Vercel deployment
+charts/
+*.xlsx
+*.xls
+backend/__pycache__/
+backend/*.pyc
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Old scanner scripts
+ema_scanner.py
+ema_scanner_fixed.py
+backend/test.py
+
+# Misc
+New Text Document.txt
+.git/
