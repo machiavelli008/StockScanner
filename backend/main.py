@@ -314,16 +314,22 @@ def get_stock_signals(ticker):
         print(f"Analyzing touches for {ticker}...")
         
         # Текущие значения EMA и дистанция цены (по дневным данным)
+        current_atr = float(hist_daily['atr'].iloc[-1])
         current_ema = {}
         for period in ema_periods:
             col = f'ema_{period}'
             ema_val = float(hist_daily[col].iloc[-1])
             dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
+            price_above = current_price >= ema_val
+            # Зона поддержки: цена выше EMA в пределах 1%,
+            # или цена ниже EMA но не более чем на 1 ATR (реальное касание/тест)
+            near_from_above = price_above and dist_pct <= 1.0
+            near_from_below = not price_above and (ema_val - current_price) <= current_atr
             current_ema[col] = {
                 'value': round(ema_val, 2),
                 'distance_pct': dist_pct,
-                'is_near': dist_pct <= 1.0 and current_price >= ema_val,
-                'price_above': current_price >= ema_val,
+                'is_near': near_from_above or near_from_below,
+                'price_above': price_above,
             }
 
         result = {
