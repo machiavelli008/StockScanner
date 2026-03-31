@@ -115,16 +115,20 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             lower_emas = [v for k, v in ema_values.items() if v < ema_val]
             touches_lower = any(current_price <= lv for lv in lower_emas)
             if not touches_lower:
+                prev_close = float(hist['Close'].iloc[-2])
+                prev_ema = float(hist[col].iloc[-2])
+                came_from_above = prev_close >= prev_ema
+
                 if dist_pct <= 0.15:
-                    signal_type = 'entry_zone'
+                    if came_from_above:
+                        signal_type = 'entry_zone'  # только что упала — касание
+                    elif period == 200:
+                        signal_type = 'watching'    # EMA200: подход снизу к уровню
                 elif dist_pct <= 2.0:
-                    if period == 200:
-                        signal_type = 'watching'
-                    else:
-                        prev_close = float(hist['Close'].iloc[-2])
-                        prev_ema = float(hist[col].iloc[-2])
-                        if prev_close >= prev_ema:
-                            signal_type = 'watching'
+                    if came_from_above:
+                        signal_type = 'watching'    # только что упала ниже EMA
+                    elif period == 200:
+                        signal_type = 'watching'    # EMA200: подход снизу, консолидация
 
         result[col] = {
             'value': round(ema_val, 2),
