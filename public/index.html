@@ -342,6 +342,41 @@
             font-weight: 700;
         }
 
+        .near-badge {
+            display: inline-block;
+            background: #f59e0b;
+            color: #fff;
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 0.15rem 0.45rem;
+            border-radius: 999px;
+            margin-left: 0.4rem;
+            vertical-align: middle;
+            letter-spacing: 0.03em;
+        }
+
+        .dist-pct {
+            font-size: 0.74rem;
+            color: #94a3b8;
+            margin-left: 0.3rem;
+        }
+
+        .signal-card.has-active-signal {
+            border: 2px solid #f59e0b;
+            box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12), var(--shadow-soft);
+        }
+
+        .active-signal-banner {
+            background: linear-gradient(90deg, #f59e0b, #fbbf24);
+            color: #fff;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 0.35rem 0.7rem;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            letter-spacing: 0.02em;
+        }
+
         .stats {
             margin-top: 0.2rem;
             color: #475569;
@@ -554,11 +589,14 @@
             return 'prob-neutral';
         }
 
-        function emaRow(label, s1, s2) {
+        function emaRow(label, s1, s2, emaInfo) {
             if (!s1 || !s2) return '';
+            const nearBadge = emaInfo && emaInfo.is_near
+                ? `<span class="near-badge">NEAR</span><span class="dist-pct">${emaInfo.distance_pct}%</span>`
+                : (emaInfo ? `<span class="dist-pct">${emaInfo.distance_pct}%</span>` : '');
             return `
                 <tr>
-                    <td class="ema-name">${label}</td>
+                    <td class="ema-name">${label}${nearBadge}</td>
                     <td class="ema-period">
                         <span class="${getProbColor(s1.probability)}">${s1.probability}%</span>
                         <div class="stats">${s1.positive} up | ${s1.negative} down</div>
@@ -570,9 +608,10 @@
                 </tr>`;
         }
 
-        function tfTable(tfData, title) {
+        function tfTable(tfData, title, currentEma) {
             const p1 = tfData.period_1_5y;
             const p2 = tfData.period_10y;
+            const ema = currentEma || {};
             return `
                 <div class="ema-section">
                     <div class="ema-title">${title}</div>
@@ -585,24 +624,33 @@
                             </tr>
                         </thead>
                         <tbody>
-                            ${emaRow('EMA 20',  p1.ema_20,  p2.ema_20)}
-                            ${emaRow('EMA 50',  p1.ema_50,  p2.ema_50)}
-                            ${emaRow('EMA 100', p1.ema_100, p2.ema_100)}
-                            ${emaRow('EMA 200', p1.ema_200, p2.ema_200)}
+                            ${emaRow('EMA 20',  p1.ema_20,  p2.ema_20,  ema.ema_20)}
+                            ${emaRow('EMA 50',  p1.ema_50,  p2.ema_50,  ema.ema_50)}
+                            ${emaRow('EMA 100', p1.ema_100, p2.ema_100, ema.ema_100)}
+                            ${emaRow('EMA 200', p1.ema_200, p2.ema_200, ema.ema_200)}
                         </tbody>
                     </table>
                 </div>`;
         }
 
         function renderSignalCard(signal) {
+            const ema = signal.current_ema || {};
+            const activeEmas = Object.entries(ema)
+                .filter(([, v]) => v.is_near)
+                .map(([k]) => k.replace('ema_', 'EMA '));
+            const hasActive = activeEmas.length > 0;
+            const banner = hasActive
+                ? `<div class="active-signal-banner">ACTIVE SIGNAL — Price near ${activeEmas.join(', ')}</div>`
+                : '';
             return `
-                <article class="signal-card">
+                <article class="signal-card${hasActive ? ' has-active-signal' : ''}">
+                    ${banner}
                     <div class="ticker-header">
                         <span class="ticker-name">${escapeHtml(signal.ticker)}</span>
-                        <span class="current-price">$${escapeHtml(signal.current_price)}</span>
+                        <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>
                     </div>
-                    ${tfTable(signal.daily, 'Daily Resolution')}
-                    ${tfTable(signal.weekly, 'Weekly Resolution')}
+                    ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema)}
+                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema)}
                 </article>
             `;
         }
