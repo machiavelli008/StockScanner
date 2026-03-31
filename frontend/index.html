@@ -342,10 +342,8 @@
             font-weight: 700;
         }
 
-        .near-badge {
+        .ema-badge {
             display: inline-block;
-            background: #f59e0b;
-            color: #fff;
             font-size: 0.68rem;
             font-weight: 700;
             padding: 0.15rem 0.45rem;
@@ -354,6 +352,9 @@
             vertical-align: middle;
             letter-spacing: 0.03em;
         }
+        .badge-approaching { background: #f59e0b; color: #fff; }
+        .badge-entry       { background: #16a34a; color: #fff; }
+        .badge-watching    { background: #3b82f6; color: #fff; }
 
         .dist-pct {
             font-size: 0.74rem;
@@ -362,20 +363,30 @@
         }
 
         .signal-card.has-active-signal {
+            border: 2px solid #16a34a;
+            box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12), var(--shadow-soft);
+        }
+        .signal-card.has-watching {
+            border: 2px solid #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12), var(--shadow-soft);
+        }
+        .signal-card.has-approaching {
             border: 2px solid #f59e0b;
             box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12), var(--shadow-soft);
         }
 
         .active-signal-banner {
-            background: linear-gradient(90deg, #f59e0b, #fbbf24);
-            color: #fff;
             font-size: 0.8rem;
             font-weight: 700;
             padding: 0.35rem 0.7rem;
             border-radius: 8px;
             margin-bottom: 0.75rem;
             letter-spacing: 0.02em;
+            color: #fff;
         }
+        .banner-entry      { background: linear-gradient(90deg, #16a34a, #22c55e); }
+        .banner-watching   { background: linear-gradient(90deg, #2563eb, #3b82f6); }
+        .banner-approaching{ background: linear-gradient(90deg, #d97706, #f59e0b); }
 
         .stats {
             margin-top: 0.2rem;
@@ -589,14 +600,25 @@
             return 'prob-neutral';
         }
 
+        function getEmaBadge(emaInfo, prob1_5y) {
+            if (!emaInfo) return '';
+            const type = emaInfo.signal_type;
+            const dist = `<span class="dist-pct">${emaInfo.distance_pct}%</span>`;
+            if (type === 'entry_zone' && prob1_5y >= 65)
+                return `<span class="ema-badge badge-entry">Точка входа</span>${dist}`;
+            if (type === 'approaching')
+                return `<span class="ema-badge badge-approaching">Подходит к уровню</span>${dist}`;
+            if (type === 'watching')
+                return `<span class="ema-badge badge-watching">Наблюдаем</span>${dist}`;
+            return emaInfo.distance_pct !== undefined ? dist : '';
+        }
+
         function emaRow(label, s1, s2, emaInfo) {
             if (!s1 || !s2) return '';
-            const nearBadge = emaInfo && emaInfo.is_near
-                ? `<span class="near-badge">NEAR</span><span class="dist-pct">${emaInfo.distance_pct}%</span>`
-                : (emaInfo ? `<span class="dist-pct">${emaInfo.distance_pct}%</span>` : '');
+            const badge = getEmaBadge(emaInfo, s1.probability);
             return `
                 <tr>
-                    <td class="ema-name">${label}${nearBadge}</td>
+                    <td class="ema-name">${label}${badge}</td>
                     <td class="ema-period">
                         <span class="${getProbColor(s1.probability)}">${s1.probability}%</span>
                         <div class="stats">${s1.positive} up | ${s1.negative} down</div>
@@ -635,15 +657,41 @@
 
         function renderSignalCard(signal) {
             const ema = signal.current_ema || {};
-            const activeEmas = Object.entries(ema)
-                .filter(([, v]) => v.is_near)
-                .map(([k]) => k.replace('ema_', 'EMA '));
-            const hasActive = activeEmas.length > 0;
-            const banner = hasActive
-                ? `<div class="active-signal-banner">ACTIVE SIGNAL — Price near ${activeEmas.join(', ')}</div>`
-                : '';
+
+            // Определяем наивысший приоритет сигнала для карточки
+            const entries = Object.entries(ema);
+            const dailyProbs = signal.daily && signal.daily.period_1_5y || {};
+
+            const hasEntry = entries.some(([k, v]) =>
+                v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65);
+            const hasApproaching = entries.some(([k, v]) => v.signal_type === 'approaching');
+            const hasWatching = entries.some(([k, v]) => v.signal_type === 'watching');
+
+            let cardClass = 'signal-card';
+            let banner = '';
+
+            if (hasEntry) {
+                cardClass += ' has-active-signal';
+                const names = entries
+                    .filter(([k, v]) => v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65)
+                    .map(([k]) => k.replace('ema_', 'EMA '));
+                banner = `<div class="active-signal-banner banner-entry">Точка входа — ${names.join(', ')}</div>`;
+            } else if (hasWatching) {
+                cardClass += ' has-watching';
+                const names = entries
+                    .filter(([, v]) => v.signal_type === 'watching')
+                    .map(([k]) => k.replace('ema_', 'EMA '));
+                banner = `<div class="active-signal-banner banner-watching">Наблюдаем — ${names.join(', ')}</div>`;
+            } else if (hasApproaching) {
+                cardClass += ' has-approaching';
+                const names = entries
+                    .filter(([, v]) => v.signal_type === 'approaching')
+                    .map(([k]) => k.replace('ema_', 'EMA '));
+                banner = `<div class="active-signal-banner banner-approaching">Подходит к уровню — ${names.join(', ')}</div>`;
+            }
+
             return `
-                <article class="signal-card${hasActive ? ' has-active-signal' : ''}">
+                <article class="${cardClass}">
                     ${banner}
                     <div class="ticker-header">
                         <span class="ticker-name">${escapeHtml(signal.ticker)}</span>
