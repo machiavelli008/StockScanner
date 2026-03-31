@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import yfinance as yf
 from pathlib import Path
-import uvicorn
 import pandas as pd
 import numpy as np
 import threading
@@ -485,6 +484,9 @@ async def startup_event():
             print("(Running on Vercel - startup refresh disabled to prevent timeout)")
 
 if __name__ == "__main__":
+    # Этот блок выполняется ТОЛЬКО локально, не на Vercel
+    import uvicorn
+    
     def auto_refresh_background():
         """Фоновый поток для автоматического обновления данных каждые 5 минут"""
         global background_thread_stop
