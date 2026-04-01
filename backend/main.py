@@ -578,6 +578,20 @@ def get_signal_by_ticker(ticker: str):
         return signal
     return {"error": f"Could not get data for {ticker}"}
 
+@app.get("/api/debug")
+def debug_info():
+    file_exists = SIGNALS_JSON_PATH.exists()
+    cache_count = len(signals_cache['signals'])
+    aapl = next((s for s in signals_cache['signals'] if s.get('ticker') == 'AAPL'), None)
+    ema200_10y = aapl['weekly']['period_10y']['ema_200'] if aapl else None
+    return {
+        "signals_json_path": str(SIGNALS_JSON_PATH),
+        "file_exists": file_exists,
+        "cache_count": cache_count,
+        "last_update": signals_cache['last_update'].isoformat() if signals_cache['last_update'] else None,
+        "aapl_weekly_ema200_10y": ema200_10y,
+    }
+
 # Не монтируем статику на Vercel (она обслуживается отдельно через public/)
 # На локальной машине статика монтируется если это не serverless
 if not os.getenv("VERCEL"):
