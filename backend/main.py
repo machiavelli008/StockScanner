@@ -214,8 +214,10 @@ def find_touch_events(
 
         # Если уже на стартовой свече задели более низкую MA,
         # считаем это медвежьим признаком (для классификации события).
-        touched_lower_ma_on_start = False
+        # Если на стартовой свече LOW уже задел более низкую EMA —
+        # касание не считаем вообще: непонятно на какую EMA реагирует цена.
         if lower_ema_cols:
+            touched_lower_ma_on_start = False
             for lower_col in lower_ema_cols:
                 try:
                     lower_val = float(data[lower_col].iloc[i])
@@ -226,11 +228,14 @@ def find_touch_events(
                 if lower_val < ema and curr_low <= lower_val:
                     touched_lower_ma_on_start = True
                     break
+            if touched_lower_ma_on_start:
+                processed_indices.add(i)
+                continue
 
         event_indices = [i]
         candles_in_event = 1
         result = None
-        saw_lower_ma = touched_lower_ma_on_start
+        saw_lower_ma = False
 
         end_j = min(i + lookahead, len(data) - 1)
         for j in range(i + 1, end_j + 1):
@@ -268,8 +273,8 @@ def find_touch_events(
                 result = 'negative'
                 break
 
-            # Positive при реакции вверх минимум +1% от EMA.
-            if f_high >= (f_ema * (1 + rebound_pct)) and not saw_lower_ma:
+            # Positive: свеча ЗАКРЫЛАСЬ выше EMA+1% (только по close, не high).
+            if f_close >= (f_ema * (1 + rebound_pct)) and not saw_lower_ma:
                 result = 'positive'
                 break
 
