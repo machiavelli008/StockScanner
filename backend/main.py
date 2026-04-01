@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from pathlib import Path
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import threading
@@ -555,7 +556,7 @@ def get_signals():
 
     with cache_lock:
         last_update = signals_cache['last_update']
-        last_update_iso = last_update.isoformat() if last_update is not None else None
+        last_update_iso = last_update.isoformat() if last_update is not None else datetime.now().isoformat()
         data_generated_at = signals_cache.get('data_generated_at')
         return {
             "signals": signals_cache['signals'],

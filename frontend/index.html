@@ -569,7 +569,7 @@
                 }
                 const data = await response.json();
                 displaySignals(data.signals);
-                updateMeta(data.signals, data.last_update, data.data_generated_at);
+                updateMeta(data.signals, data.last_update || new Date().toISOString(), data.data_generated_at);
                 setStatus('Universe synced');
             } catch (error) {
                 console.error('Error:', error);
