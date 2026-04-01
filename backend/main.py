@@ -539,11 +539,9 @@ def should_refresh_cache():
 
 @app.get("/api/signals")
 def get_signals():
-    """Возвращает сигналы: сначала из файла, иначе из кэша или пересчитывает."""
+    """Возвращает сигналы из signals.json."""
     if should_refresh_cache():
-        loaded = load_signals_from_file()
-        if not loaded:
-            refresh_signals()
+        load_signals_from_file()
 
     with cache_lock:
         last_update = signals_cache['last_update']
@@ -557,10 +555,8 @@ def get_signals():
 
 @app.post("/api/refresh")
 def refresh_signals_endpoint():
-    """Обновить сигналы: сначала из файла, иначе через yfinance."""
-    loaded = load_signals_from_file()
-    if not loaded:
-        refresh_signals()
+    """Перезагрузить сигналы из signals.json."""
+    load_signals_from_file()
     with cache_lock:
         last_update = signals_cache['last_update']
         last_update_iso = last_update.isoformat() if last_update is not None else None
