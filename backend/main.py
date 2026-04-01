@@ -236,7 +236,6 @@ def find_touch_events(
         event_indices = [i]
         candles_in_event = 1
         result = None
-        saw_lower_ma = False
 
         end_j = min(i + lookahead, len(data) - 1)
         for j in range(i + 1, end_j + 1):
@@ -255,28 +254,14 @@ def find_touch_events(
             candles_in_event += 1
             event_indices.append(j)
 
-            # Фиксируем, достигла ли цена более низкой MA в рамках события.
-            if lower_ema_cols:
-                for lower_col in lower_ema_cols:
-                    try:
-                        future_lower_val = float(data[lower_col].iloc[j])
-                    except Exception:
-                        continue
-                    if pd.isna(future_lower_val):
-                        continue
-                    if future_lower_val < f_ema and f_low <= future_lower_val:
-                        saw_lower_ma = True
-                        break
-
-            # Negative при полном пробое вниз EMA-1ATR.
-            # Также считаем Negative, если дошли до более низкой MA.
-            if f_close < (f_ema - f_atr) or saw_lower_ma:
-                result = 'negative'
+            # Positive: закрылась +1% выше EMA.
+            if f_close >= (f_ema * (1 + rebound_pct)):
+                result = 'positive'
                 break
 
-            # Positive: свеча ЗАКРЫЛАСЬ выше EMA+1% (только по close, не high).
-            if f_close >= (f_ema * (1 + rebound_pct)) and not saw_lower_ma:
-                result = 'positive'
+            # Negative: закрылась ниже EMA − 1ATR.
+            if f_close < (f_ema - f_atr):
+                result = 'negative'
                 break
 
             # Пока цена в зоне EMA±ATR, считаем это одной группой свечей.
