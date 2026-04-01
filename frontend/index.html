@@ -398,6 +398,22 @@
         .banner-entry      { background: linear-gradient(90deg, #16a34a, #22c55e); }
         .banner-watching   { background: linear-gradient(90deg, #2563eb, #3b82f6); }
         .banner-approaching{ background: linear-gradient(90deg, #d97706, #f59e0b); }
+        .banner-warning    { background: linear-gradient(90deg, #7f1d1d, #dc2626); }
+
+        .signal-card.has-downtrend {
+            border: 2px solid #dc2626;
+            opacity: 0.75;
+        }
+
+        .downtrend-overlay {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 0.5rem 0.7rem;
+            margin-bottom: 0.75rem;
+            color: #7f1d1d;
+            font-size: 0.82rem;
+        }
 
         .stats {
             margin-top: 0.2rem;
@@ -702,9 +718,14 @@
                 banner = `<div class="active-signal-banner banner-approaching">Approaching — ${names.join(', ')}</div>`;
             }
 
+            const downtrendHtml = signal.downtrend_warning
+                ? `<div class="downtrend-overlay">⚠ ${escapeHtml(signal.downtrend_warning)}</div>`
+                : '';
+            if (signal.downtrend_warning) cardClass += ' has-downtrend';
+
             return `
                 <article class="${cardClass}">
-                    ${banner}
+                    ${signal.downtrend_warning ? downtrendHtml : banner}
                     <div class="ticker-header">
                         <span class="ticker-name">${escapeHtml(signal.ticker)}</span>
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>

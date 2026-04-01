@@ -343,8 +343,26 @@ def get_stock_signals(ticker):
         
         print(f"Daily: {len(hist_daily)} rows, Weekly: {len(hist_weekly)} rows")
         print(f"Calculating indicators for {ticker}...")
-        
+
         current_price = hist_daily['Close'].iloc[-1].item()
+
+        # Фильтр постоянно падающих инструментов (обратные/плечевые ETF с decay).
+        # Если за 5 лет потеряно более 70% — анализ касаний бессмысленен.
+        downtrend_warning = None
+        hist_daily_idx = hist_daily.copy()
+        hist_daily_idx.index = pd.to_datetime(hist_daily_idx.index)
+        cutoff_5y = hist_daily_idx.index.max() - pd.DateOffset(years=5)
+        hist_5y_start = hist_daily_idx[hist_daily_idx.index >= cutoff_5y]
+        if not hist_5y_start.empty:
+            price_5y_ago = float(hist_5y_start['Close'].iloc[0])
+            if price_5y_ago > 0:
+                change_5y = (current_price - price_5y_ago) / price_5y_ago
+                if change_5y < -0.70:
+                    downtrend_warning = (
+                        f"Long-term downtrend detected: -{abs(change_5y)*100:.0f}% over 5 years. "
+                        "EMA touch statistics may not be reliable for this instrument."
+                    )
+                    print(f"  WARNING: {ticker} lost {abs(change_5y)*100:.0f}% in 5Y — flagged as downtrending")
         
         ema_periods = [20, 50, 100, 200]
         
@@ -373,6 +391,7 @@ def get_stock_signals(ticker):
         result = {
             "ticker": ticker,
             "current_price": round(current_price, 2),
+            "downtrend_warning": downtrend_warning,
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
             "daily": {
