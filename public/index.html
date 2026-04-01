@@ -548,10 +548,11 @@
             return date.toLocaleString();
         }
 
-        function updateMeta(signals, lastUpdate) {
+        function updateMeta(signals, lastUpdate, dataGeneratedAt) {
             document.getElementById('meta-count').textContent = Array.isArray(signals) ? signals.length : 0;
             document.getElementById('meta-tickers').textContent = Array.isArray(signals) ? signals.map((s) => s.ticker).join(', ') : '-';
-            document.getElementById('meta-updated').textContent = formatLastUpdate(lastUpdate);
+            const displayTime = dataGeneratedAt ? formatLastUpdate(dataGeneratedAt) : formatLastUpdate(lastUpdate);
+            document.getElementById('meta-updated').textContent = displayTime;
         }
 
         async function loadSignals() {
@@ -566,7 +567,7 @@
                 }
                 const data = await response.json();
                 displaySignals(data.signals);
-                updateMeta(data.signals, data.last_update);
+                updateMeta(data.signals, data.last_update, data.data_generated_at);
                 setStatus('Universe synced');
             } catch (error) {
                 console.error('Error:', error);

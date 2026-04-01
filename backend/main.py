@@ -522,12 +522,12 @@ def load_signals_from_file():
         with open(SIGNALS_JSON_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         signals = data.get("signals", [])
-        last_update_str = data.get("last_update")
-        last_update = pd.Timestamp(last_update_str) if last_update_str else pd.Timestamp.now()
+        data_generated_at = data.get("last_update", "unknown")
         with cache_lock:
             signals_cache['signals'] = signals
-            signals_cache['last_update'] = last_update
-        print(f"Loaded {len(signals)} signals from {SIGNALS_JSON_PATH}")
+            signals_cache['last_update'] = pd.Timestamp.now()  # время загрузки на сервере
+            signals_cache['data_generated_at'] = data_generated_at
+        print(f"Loaded {len(signals)} signals from {SIGNALS_JSON_PATH} (generated: {data_generated_at})")
         return True
     except Exception as e:
         print(f"Failed to load signals.json: {e}")
@@ -556,9 +556,11 @@ def get_signals():
     with cache_lock:
         last_update = signals_cache['last_update']
         last_update_iso = last_update.isoformat() if last_update is not None else None
+        data_generated_at = signals_cache.get('data_generated_at')
         return {
             "signals": signals_cache['signals'],
             "last_update": last_update_iso,
+            "data_generated_at": data_generated_at,
         }
 
 @app.post("/api/refresh")
