@@ -597,16 +597,20 @@ if not os.getenv("VERCEL"):
 
 @app.on_event("startup")
 async def startup_event():
-    """Загружаем сигналы при старте (только локально, не на Vercel)"""
-    if ENABLE_STARTUP_REFRESH:
+    """Загружаем сигналы при старте"""
+    # Всегда пробуем загрузить из файла (быстро, без сети)
+    loaded = load_signals_from_file()
+    if loaded:
+        print("\n=== Signals loaded from file on startup ===")
+    elif ENABLE_STARTUP_REFRESH:
         try:
-            print("\n=== Loading signals on startup ===")
+            print("\n=== Loading signals on startup via yfinance ===")
             refresh_signals()
         except Exception as e:
             print(f"\n⚠️  Startup refresh failed: {e}")
             print("App will fetch signals on first API call")
     else:
-        print("\n=== Startup refresh is disabled ===")
+        print("\n=== No signals file found, will load on first request ===")
         if os.getenv("VERCEL"):
             print("(Running on Vercel - startup refresh disabled to prevent timeout)")
 

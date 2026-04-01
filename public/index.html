@@ -541,9 +541,11 @@
             if (!isoString) {
                 return 'Not loaded';
             }
-            const date = new Date(isoString);
+            // Truncate microseconds to milliseconds (JS only supports 3 fractional digits)
+            const normalized = isoString.replace(/(\.\d{3})\d+/, '$1');
+            const date = new Date(normalized);
             if (Number.isNaN(date.getTime())) {
-                return 'Unknown';
+                return isoString; // fallback: show raw string
             }
             return date.toLocaleString();
         }
