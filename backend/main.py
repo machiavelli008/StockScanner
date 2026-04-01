@@ -351,7 +351,7 @@ def get_stock_signals(ticker):
                     )
                     print(f"  WARNING: {ticker} lost {abs(change_5y)*100:.0f}% in 5Y — flagged as downtrending")
         
-        ema_periods = [20, 50, 100, 200]
+        ema_periods = [20, 50, 200]
 
         # Daily — EMA считаем на 15 годах, потом обрезаем до последних 10 для анализа
         for period in ema_periods:
