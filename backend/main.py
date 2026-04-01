@@ -317,8 +317,9 @@ def get_stock_signals(ticker):
         print(f"\nDownloading data for {ticker}...")
         
         yf = get_yfinance()
-        hist_daily = yf.download(ticker, period="10y", interval="1d", progress=False, auto_adjust=False)
-        hist_weekly = yf.download(ticker, period="10y", interval="1wk", progress=False, auto_adjust=False)
+        # Скачиваем 15 лет для точного расчёта EMA200, анализируем последние 10
+        hist_daily = yf.download(ticker, period="15y", interval="1d", progress=False, auto_adjust=False)
+        hist_weekly = yf.download(ticker, period="15y", interval="1wk", progress=False, auto_adjust=False)
 
         hist_daily = normalize_ohlc_columns(hist_daily)
         hist_weekly = normalize_ohlc_columns(hist_weekly)
@@ -351,19 +352,24 @@ def get_stock_signals(ticker):
                     print(f"  WARNING: {ticker} lost {abs(change_5y)*100:.0f}% in 5Y — flagged as downtrending")
         
         ema_periods = [20, 50, 100, 200]
-        
-        # Daily
+
+        # Daily — EMA считаем на 15 годах, потом обрезаем до последних 10 для анализа
         for period in ema_periods:
             hist_daily[f'ema_{period}'] = calculate_ema(hist_daily['Close'], period)
         hist_daily = calculate_atr(hist_daily, 14)
         hist_daily = hist_daily.dropna()
-        
-        # Weekly
+        hist_daily.index = pd.to_datetime(hist_daily.index)
+        cutoff_10y = hist_daily.index.max() - pd.DateOffset(years=10)
+        hist_daily = hist_daily[hist_daily.index > cutoff_10y]
+
+        # Weekly — то же самое
         for period in ema_periods:
             hist_weekly[f'ema_{period}'] = calculate_ema(hist_weekly['Close'], period)
         hist_weekly = calculate_atr(hist_weekly, 14)
         hist_weekly = hist_weekly.dropna()
-        
+        hist_weekly.index = pd.to_datetime(hist_weekly.index)
+        hist_weekly = hist_weekly[hist_weekly.index > cutoff_10y]
+
         # Разделяем: 1-5 лет и все 10 лет целиком.
         daily_1_5y, daily_10y = split_by_year_windows(hist_daily)
         weekly_1_5y, weekly_10y = split_by_year_windows(hist_weekly)
