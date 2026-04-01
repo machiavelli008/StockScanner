@@ -455,7 +455,7 @@ def get_stock_signals(ticker):
                     ema_col,
                     'atr',
                     lower_ema_cols=lower_emas,
-                    cooldown_bars=8,
+                    cooldown_bars=2,
                 )
                 stats = calc_stats(touches)
                 result['weekly'][period_name][ema_col] = stats
