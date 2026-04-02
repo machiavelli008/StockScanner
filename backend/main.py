@@ -577,14 +577,19 @@ def get_signal_by_ticker(ticker: str):
 @app.get("/api/debug")
 def debug_info():
     file_exists = SIGNALS_JSON_PATH.exists()
+    import hashlib
+    file_hash = hashlib.md5(open(SIGNALS_JSON_PATH, 'rb').read()).hexdigest() if file_exists else None
     cache_count = len(signals_cache['signals'])
     aapl = next((s for s in signals_cache['signals'] if s.get('ticker') == 'AAPL'), None)
     ema200_10y = aapl['weekly']['period_10y']['ema_200'] if aapl else None
+    ema20_1_5y = aapl['daily']['period_1_5y']['ema_20'] if aapl else None
     return {
         "signals_json_path": str(SIGNALS_JSON_PATH),
         "file_exists": file_exists,
+        "file_md5": file_hash,
         "cache_count": cache_count,
         "last_update": signals_cache['last_update'].isoformat() if signals_cache['last_update'] else None,
+        "aapl_daily_ema20_1_5y": ema20_1_5y,
         "aapl_weekly_ema200_10y": ema200_10y,
     }
 
