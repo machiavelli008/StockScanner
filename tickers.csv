@@ -1,6 +1,66 @@
-Ticker
-AAPL
-MSFT
-TSLA
-NVDA
-AMZN
+Ticker,Category
+AAPL,S&P 100
+MSFT,S&P 100
+NVDA,S&P 100
+AMZN,S&P 100
+GOOGL,S&P 100
+META,S&P 100
+LLY,S&P 100
+AVGO,S&P 100
+TSLA,S&P 100
+JPM,S&P 100
+WMT,S&P 100
+V,S&P 100
+XOM,S&P 100
+UNH,S&P 100
+MA,S&P 100
+COST,S&P 100
+HD,S&P 100
+PG,S&P 100
+JNJ,S&P 100
+ORCL,S&P 100
+BAC,S&P 100
+ABBV,S&P 100
+KO,S&P 100
+MRK,S&P 100
+CVX,S&P 100
+CRM,S&P 100
+NFLX,S&P 100
+AMD,S&P 100
+PEP,S&P 100
+BRK-B,S&P 100
+TSM,Semiconductors
+QCOM,Semiconductors
+INTC,Semiconductors
+MU,Semiconductors
+AMAT,Semiconductors
+LRCX,Semiconductors
+KLAC,Semiconductors
+MRVL,Semiconductors
+ON,Semiconductors
+TXN,Semiconductors
+ARM,Semiconductors
+MCHP,Semiconductors
+ADBE,Technology
+NOW,Technology
+INTU,Technology
+UBER,Technology
+PLTR,Technology
+SHOP,Technology
+SNOW,Technology
+PANW,Technology
+CRWD,Technology
+ZS,Technology
+DDOG,Technology
+MDB,Technology
+GS,Finance
+MS,Finance
+AXP,Finance
+BLK,Finance
+SCHW,Finance
+C,Finance
+PFE,Healthcare
+TMO,Healthcare
+ABT,Healthcare
+AMGN,Healthcare
+GILD,Healthcare

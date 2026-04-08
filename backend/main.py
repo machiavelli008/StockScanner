@@ -108,10 +108,15 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
         signal_type = None
 
         if price_above:
-            if dist_pct <= 0.15:
-                signal_type = 'entry_zone'
-            elif dist_pct <= 1.0:
-                signal_type = 'approaching'
+            # Проверяем что последние 3 свечи тоже были выше EMA (цена снижается сверху вниз)
+            prev_closes = [float(hist['Close'].iloc[-i]) for i in range(2, 5)]
+            prev_emas = [float(hist[col].iloc[-i]) for i in range(2, 5)]
+            came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
+            if came_from_above:
+                if dist_pct <= 0.15:
+                    signal_type = 'entry_zone'
+                elif dist_pct <= 1.0:
+                    signal_type = 'approaching'
         else:
             lower_emas = [v for k, v in ema_values.items() if v < ema_val]
             touches_lower = any(current_price <= lv for lv in lower_emas)
@@ -165,6 +170,8 @@ def find_touch_events(
     rebound_pct=0.01,
     lower_ema_cols=None,
     cooldown_bars=0,
+    require_rally_after_negative=False,
+    max_bars_below_ema=None,
 ):
     """
     Логика касаний сверху вниз:
@@ -182,6 +189,7 @@ def find_touch_events(
     touches = []
     processed_indices = set()
     last_positive_event_start_idx = -10_000
+    last_negative_event_end_idx = -10_000
 
     for i in range(1, len(data) - 1):
         if i in processed_indices:
@@ -201,8 +209,13 @@ def find_touch_events(
         if pd.isna(prev_ema) or pd.isna(ema) or pd.isna(atr) or atr <= 0:
             continue
 
-        # Только движение сверху вниз: предыдущая свеча должна быть выше EMA.
-        if prev_close <= prev_ema:
+        # Только движение сверху вниз: минимум 3 свечи подряд были выше EMA перед касанием.
+        came_from_above = all(
+            float(data['Close'].iloc[i - k]) > float(data[ema_col].iloc[i - k])
+            for k in range(1, 4)
+            if i - k >= 0
+        )
+        if not came_from_above:
             continue
 
         # Close подходит к EMA в пределах 0.15% оставаясь выше неё.
@@ -236,6 +249,8 @@ def find_touch_events(
         event_indices = [i]
         candles_in_event = 1
         result = None
+        bars_below_ema = 1 if float(data['Close'].iloc[i]) < float(data[ema_col].iloc[i]) else 0
+        touched_lower_ema_during = False
 
         end_j = min(i + lookahead, len(data) - 1)
         for j in range(i + 1, end_j + 1):
@@ -254,9 +269,53 @@ def find_touch_events(
             candles_in_event += 1
             event_indices.append(j)
 
+            # Если во время события LOW коснулся более низкой EMA — запоминаем флаг
+            if lower_ema_cols and not touched_lower_ema_during:
+                for lower_col in lower_ema_cols:
+                    try:
+                        lower_val = float(data[lower_col].iloc[j])
+                    except Exception:
+                        continue
+                    if not pd.isna(lower_val) and lower_val < f_ema and f_low <= lower_val:
+                        touched_lower_ema_during = True
+                        break
+
+            # Счётчик баров ниже EMA
+            if f_close < f_ema:
+                bars_below_ema += 1
+            else:
+                bars_below_ema = 0
+
+            # Негатив если цена закрылась ниже EMA N баров подряд (только weekly)
+            if max_bars_below_ema and bars_below_ema >= max_bars_below_ema:
+                result = 'negative'
+                break
+
             # Positive: закрылась +1% выше EMA.
+            # Если во время события LOW касался нижней EMA — позитив не считаем (неясно на что реакция).
+            # Для weekly: требуем подтверждение — следующие 3 бара не должны закрыться ниже EMA−ATR.
             if f_close >= (f_ema * (1 + rebound_pct)):
-                result = 'positive'
+                if touched_lower_ema_during:
+                    result = None
+                    break
+                if require_rally_after_negative:  # применяем только для weekly
+                    confirmed = True
+                    for k in range(1, 4):
+                        ki = j + k
+                        if ki >= len(data):
+                            break
+                        try:
+                            kc = float(data['Close'].iloc[ki])
+                            ke = float(data[ema_col].iloc[ki])
+                            ka = float(data[atr_col].iloc[ki])
+                        except Exception:
+                            break
+                        if not (pd.isna(ke) or pd.isna(ka)) and kc < (ke - ka):
+                            confirmed = False
+                            break
+                    result = 'positive' if confirmed else 'negative'
+                else:
+                    result = 'positive'
                 break
 
             # Negative: закрылась ниже EMA − 1ATR.
@@ -276,6 +335,19 @@ def find_touch_events(
                     processed_indices.add(idx)
                 continue
 
+            # Фильтр боковика (только weekly): после негативного события требуем ралли —
+            # хотя бы одно закрытие выше EMA+ATR. Если его не было — цена в боковике, не считаем.
+            if require_rally_after_negative and last_negative_event_end_idx > -10_000:
+                had_rally = any(
+                    float(data['Close'].iloc[k]) >= float(data[ema_col].iloc[k]) + float(data[atr_col].iloc[k])
+                    for k in range(last_negative_event_end_idx + 1, i)
+                    if k >= 0
+                )
+                if not had_rally:
+                    for idx in event_indices:
+                        processed_indices.add(idx)
+                    continue
+
             touches.append({
                 'index': i,
                 'date': data.index[i],
@@ -286,6 +358,8 @@ def find_touch_events(
             })
             if result == 'positive':
                 last_positive_event_start_idx = i
+            elif result == 'negative':
+                last_negative_event_end_idx = event_indices[-1]
 
         for idx in event_indices:
             processed_indices.add(idx)
@@ -456,6 +530,8 @@ def get_stock_signals(ticker):
                     'atr',
                     lower_ema_cols=lower_emas,
                     cooldown_bars=2,
+                    require_rally_after_negative=True,
+                    max_bars_below_ema=3 if period <= 50 else None,
                 )
                 stats = calc_stats(touches)
                 result['weekly'][period_name][ema_col] = stats
