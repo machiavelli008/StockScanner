@@ -20,19 +20,20 @@ OUTPUT_PATH = Path(__file__).parent / "data" / "signals.json"
 def main():
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
 
-    tickers = load_tickers()
-    print(f"\nFound {len(tickers)} tickers: {', '.join(tickers)}")
+    ticker_list = load_tickers()
+    tickers = [t for t, _ in ticker_list]
+    print(f"\nFound {len(ticker_list)} tickers: {', '.join(tickers)}")
     print("=" * 50)
 
     signals = []
     failed = []
 
-    for i, ticker in enumerate(tickers):
+    for i, (ticker, category) in enumerate(ticker_list):
         if i > 0:
             time.sleep(2)
-        print(f"\n[{i+1}/{len(tickers)}] Processing {ticker}...")
+        print(f"\n[{i+1}/{len(ticker_list)}] Processing {ticker} ({category})...")
         for attempt in range(3):
-            result = get_stock_signals(ticker)
+            result = get_stock_signals(ticker, category)
             if result is not None:
                 signals.append(result)
                 break

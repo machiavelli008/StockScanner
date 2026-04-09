@@ -49,16 +49,17 @@ def normalize_ohlc_columns(df):
 
 
 def load_tickers():
-    """Загружает тикеры из tickers.csv, fallback на DEFAULT_TICKERS."""
+    """Загружает тикеры из tickers.csv, возвращает список (ticker, category).
+    Fallback на DEFAULT_TICKERS с категорией 'Other'."""
     if not TICKERS_FILE_PATH.exists():
         print(f"tickers.csv not found: {TICKERS_FILE_PATH}. Using default tickers.")
-        return DEFAULT_TICKERS.copy()
+        return [(t, 'Other') for t in DEFAULT_TICKERS]
 
     try:
         df = pd.read_csv(TICKERS_FILE_PATH)
         if df.empty:
             print("tickers.csv is empty. Using default tickers.")
-            return DEFAULT_TICKERS.copy()
+            return [(t, 'Other') for t in DEFAULT_TICKERS]
 
         # Поддерживаем типичные названия колонки: Ticker/ticker/symbol.
         normalized = {str(col).strip().lower(): col for col in df.columns}
@@ -69,28 +70,38 @@ def load_tickers():
                 break
 
         if ticker_col is None:
-            # Если заголовок нестандартный, берем первую колонку.
             ticker_col = df.columns[0]
 
-        tickers = []
+        # Колонка категории
+        category_col = normalized.get("category")
+
+        result = []
         seen = set()
-        for raw in df[ticker_col].dropna().tolist():
+        for _, row in df.iterrows():
+            raw = row[ticker_col]
+            if pd.isna(raw):
+                continue
             t = str(raw).strip().upper()
             if not t or t in seen:
                 continue
             seen.add(t)
-            tickers.append(t)
+            cat = 'Other'
+            if category_col:
+                cat_val = row[category_col]
+                if not pd.isna(cat_val):
+                    cat = str(cat_val).strip()
+            result.append((t, cat))
 
-        if not tickers:
+        if not result:
             print("No valid tickers in tickers.csv. Using default tickers.")
-            return DEFAULT_TICKERS.copy()
+            return [(t, 'Other') for t in DEFAULT_TICKERS]
 
-        print(f"Loaded {len(tickers)} tickers from tickers.csv")
-        return tickers
+        print(f"Loaded {len(result)} tickers from tickers.csv")
+        return result
 
     except Exception as e:
         print(f"Failed to load tickers.csv: {e}. Using default tickers.")
-        return DEFAULT_TICKERS.copy()
+        return [(t, 'Other') for t in DEFAULT_TICKERS]
 
 def compute_current_ema_signals(hist, current_price, ema_periods):
     """Считает signal_type для каждой EMA на основе текущей цены и данных таймфрейма."""
@@ -385,7 +396,7 @@ def split_by_year_windows(df, end_date=None):
 
     return df_1_5y, df_10y
 
-def get_stock_signals(ticker):
+def get_stock_signals(ticker, category='Other'):
     """Получает сигналы для акции"""
     try:
         print(f"\nDownloading data for {ticker}...")
@@ -456,6 +467,7 @@ def get_stock_signals(ticker):
 
         result = {
             "ticker": ticker,
+            "category": category,
             "current_price": round(current_price, 2),
             "downtrend_warning": downtrend_warning,
             "current_ema": current_ema_daily,
@@ -557,16 +569,16 @@ def refresh_signals():
     """Обновить кэш сигналов"""
     global signals_cache
 
-    tickers = load_tickers()
+    ticker_list = load_tickers()
     signals = []
 
     print("\n=== Starting analysis ===")
-    for i, ticker in enumerate(tickers):
+    for i, (ticker, category) in enumerate(ticker_list):
         if i > 0:
             time.sleep(3)  # пауза между тикерами чтобы не получить rate limit
         # до 3 попыток при rate limit
         for attempt in range(3):
-            signal = get_stock_signals(ticker)
+            signal = get_stock_signals(ticker, category)
             if signal is not None:
                 signals.append(signal)
                 break
