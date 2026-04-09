@@ -415,6 +415,21 @@
             font-size: 0.82rem;
         }
 
+        .signal-card.has-sideways {
+            border: 2px solid #d97706;
+            opacity: 0.82;
+        }
+
+        .sideways-overlay {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            padding: 0.5rem 0.7rem;
+            margin-bottom: 0.75rem;
+            color: #78350f;
+            font-size: 0.82rem;
+        }
+
         .stats {
             margin-top: 0.2rem;
             color: #475569;
@@ -778,9 +793,18 @@
                 : '';
             if (signal.downtrend_warning) cardClass += ' has-downtrend';
 
+            const sidewaysHtml = signal.sideways_warning
+                ? `<div class="sideways-overlay">↔ ${escapeHtml(signal.sideways_warning)}</div>`
+                : '';
+            if (signal.sideways_warning) cardClass += ' has-sideways';
+
+            const topBanner = signal.downtrend_warning
+                ? downtrendHtml
+                : (signal.sideways_warning ? sidewaysHtml : banner);
+
             return `
                 <article class="${cardClass}">
-                    ${signal.downtrend_warning ? downtrendHtml : banner}
+                    ${topBanner}
                     <div class="ticker-header">
                         <span class="ticker-name">${escapeHtml(signal.ticker)}</span>
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>

@@ -183,6 +183,7 @@ def find_touch_events(
     cooldown_bars=0,
     require_rally_after_negative=False,
     max_bars_below_ema=None,
+    min_ema_slope_bars=0,
 ):
     """
     Логика касаний сверху вниз:
@@ -228,6 +229,15 @@ def find_touch_events(
         )
         if not came_from_above:
             continue
+
+        # Фильтр наклона EMA: EMA должна вырасти минимум на 1.5% за N баров назад.
+        # Если EMA flat или почти не движется — боковик/нисходящий тренд, касание не считаем.
+        if min_ema_slope_bars > 0 and i >= min_ema_slope_bars:
+            ema_past = float(data[ema_col].iloc[i - min_ema_slope_bars])
+            if not pd.isna(ema_past) and ema_past > 0:
+                slope_pct = (ema - ema_past) / ema_past
+                if slope_pct < 0.015:  # менее 1.5% роста за N баров → боковик
+                    continue
 
         # Close подходит к EMA в пределах 0.15% оставаясь выше неё.
         near_from_above = ema <= curr_close <= ema * (1 + near_pct)
@@ -458,9 +468,34 @@ def get_stock_signals(ticker, category='Other'):
         # Разделяем: 1-5 лет и все 10 лет целиком.
         daily_1_5y, daily_10y = split_by_year_windows(hist_daily)
         weekly_1_5y, weekly_10y = split_by_year_windows(hist_weekly)
-        
+
+        # Определяем боковик: смотрим на EMA50 недельного за 10 лет.
+        # Если >50% 8-недельных окон показывают рост EMA50 < 1.5% — сток часто в боковике.
+        sideways_warning = None
+        slope_bars = 8
+        ema50_w = hist_weekly['ema_50'].dropna()
+        if len(ema50_w) > slope_bars + 5:
+            sideways_count = 0
+            total_count = 0
+            for idx in range(slope_bars, len(ema50_w)):
+                e_now  = float(ema50_w.iloc[idx])
+                e_past = float(ema50_w.iloc[idx - slope_bars])
+                if e_past > 0:
+                    slope = (e_now - e_past) / e_past
+                    if slope < 0.015:
+                        sideways_count += 1
+                    total_count += 1
+            if total_count > 0:
+                sideways_ratio = sideways_count / total_count
+                if sideways_ratio > 0.50:
+                    sideways_warning = (
+                        f"Frequent sideways periods detected: {int(sideways_ratio*100)}% of time "
+                        "EMA50 was flat or declining. Touch statistics may be less reliable."
+                    )
+                    print(f"  WARNING: {ticker} sideways {int(sideways_ratio*100)}% of time — flagged")
+
         print(f"Analyzing touches for {ticker}...")
-        
+
         # Плашки считаются отдельно для дневного и недельного таймфреймов
         current_ema_daily = compute_current_ema_signals(hist_daily, current_price, ema_periods)
         current_ema_weekly = compute_current_ema_signals(hist_weekly, current_price, ema_periods)
@@ -470,6 +505,7 @@ def get_stock_signals(ticker, category='Other'):
             "category": category,
             "current_price": round(current_price, 2),
             "downtrend_warning": downtrend_warning,
+            "sideways_warning": sideways_warning,
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
             "daily": {
@@ -544,6 +580,7 @@ def get_stock_signals(ticker, category='Other'):
                     cooldown_bars=2,
                     require_rally_after_negative=True,
                     max_bars_below_ema=3 if period <= 50 else None,
+                    min_ema_slope_bars=8,
                 )
                 stats = calc_stats(touches)
                 result['weekly'][period_name][ema_col] = stats
