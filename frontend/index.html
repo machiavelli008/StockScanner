@@ -763,7 +763,7 @@
             const emaW = signal.current_ema_weekly || ema;
 
             // Определяем наивысший приоритет сигнала для карточки (daily + weekly)
-            const entries = [...Object.entries(ema), ...Object.entries(emaW)];
+            const entries = [...Object.entries(ema), ...Object.entries(emaW)].filter(([k]) => k !== 'ema_100');
             const dailyProbs = signal.daily && signal.daily.period_1_5y || {};
 
             const hasEntry = entries.some(([k, v]) =>
@@ -806,7 +806,7 @@
             const topBanner = signal.downtrend_warning ? downtrendHtml : (signal.sideways_warning ? '' : banner);
 
             const sidewaysBadge = signal.sideways_warning
-                ? `<span class="sideways-badge">↔ Боковик</span>`
+                ? `<span class="sideways-badge">↔ Sideways</span>`
                 : '';
 
             return `
