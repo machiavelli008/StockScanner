@@ -94,7 +94,7 @@
 
         .hero-meta {
             display: grid;
-            grid-template-columns: repeat(3, minmax(120px, 1fr));
+            grid-template-columns: repeat(1, minmax(120px, 1fr));
             gap: 0.75rem;
             margin-top: 1.3rem;
         }
@@ -430,6 +430,22 @@
             font-size: 0.82rem;
         }
 
+        .sideways-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 0.18rem 0.55rem;
+            border-radius: 999px;
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            color: #92400e;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+            letter-spacing: 0.02em;
+        }
+
         .stats {
             margin-top: 0.2rem;
             color: #475569;
@@ -549,17 +565,9 @@
             <h1>Trade pullbacks with clean probability context</h1>
             <p class="subtitle">StockScanner tracks top-down EMA touches and scores response quality for daily and weekly horizons across 5-year and 10-year windows.</p>
             <div class="hero-meta">
-                <div class="meta-tile">
-                    <span class="meta-label">Universe</span>
-                    <span class="meta-value" id="meta-tickers">-</span>
-                </div>
-                <div class="meta-tile">
+<div class="meta-tile">
                     <span class="meta-label">Last Data Update</span>
                     <span class="meta-value" id="meta-updated">-</span>
-                </div>
-                <div class="meta-tile">
-                    <span class="meta-label">Signal Cards</span>
-                    <span class="meta-value" id="meta-count">-</span>
                 </div>
             </div>
         </section>
@@ -619,8 +627,6 @@
         }
 
         function updateMeta(signals, lastUpdate, dataGeneratedAt) {
-            document.getElementById('meta-count').textContent = Array.isArray(signals) ? signals.length : 0;
-            document.getElementById('meta-tickers').textContent = Array.isArray(signals) ? signals.map((s) => s.ticker).join(', ') : '-';
             const displayTime = dataGeneratedAt ? formatLastUpdate(dataGeneratedAt) : formatLastUpdate(lastUpdate);
             document.getElementById('meta-updated').textContent = displayTime;
         }
@@ -793,20 +799,21 @@
                 : '';
             if (signal.downtrend_warning) cardClass += ' has-downtrend';
 
-            const sidewaysHtml = signal.sideways_warning
-                ? `<div class="sideways-overlay">↔ ${escapeHtml(signal.sideways_warning)}</div>`
-                : '';
-            if (signal.sideways_warning) cardClass += ' has-sideways';
+            if (signal.sideways_warning) {
+                cardClass = 'signal-card has-sideways'; // сбрасываем все другие классы рамок
+            }
 
-            const topBanner = signal.downtrend_warning
-                ? downtrendHtml
-                : (signal.sideways_warning ? sidewaysHtml : banner);
+            const topBanner = signal.downtrend_warning ? downtrendHtml : (signal.sideways_warning ? '' : banner);
+
+            const sidewaysBadge = signal.sideways_warning
+                ? `<span class="sideways-badge">↔ Боковик</span>`
+                : '';
 
             return `
                 <article class="${cardClass}">
                     ${topBanner}
                     <div class="ticker-header">
-                        <span class="ticker-name">${escapeHtml(signal.ticker)}</span>
+                        <span class="ticker-name">${escapeHtml(signal.ticker)}${sidewaysBadge}</span>
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>
                     </div>
                     ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema)}
@@ -820,6 +827,8 @@
         let _activeTab = 'All';
 
         function getSignalPriority(signal) {
+            if (signal.sideways_warning) return 10; // боковики всегда в конце
+
             const ema = signal.current_ema || {};
             const emaW = signal.current_ema_weekly || ema;
             const entries = [...Object.entries(ema), ...Object.entries(emaW)];
