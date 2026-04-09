@@ -29,6 +29,15 @@ NFLX,S&P 100
 AMD,S&P 100
 PEP,S&P 100
 BRK-B,S&P 100
+SPY,Market Components
+QQQ,Market Components
+SMH,Market Components
+RSP,Market Components
+DIA,Market Components
+XLK,Market Components
+IXIC,Market Components
+MAGS,Market Components
+RUT,Market Components
 TSM,Semiconductors
 QCOM,Semiconductors
 INTC,Semiconductors
@@ -59,8 +68,3 @@ AXP,Finance
 BLK,Finance
 SCHW,Finance
 C,Finance
-PFE,Healthcare
-TMO,Healthcare
-ABT,Healthcare
-AMGN,Healthcare
-GILD,Healthcare
