@@ -580,7 +580,7 @@ def get_stock_signals(ticker, category='Other'):
                     cooldown_bars=2,
                     require_rally_after_negative=True,
                     max_bars_below_ema=3 if period <= 50 else None,
-                    min_ema_slope_bars=8,
+                    min_ema_slope_bars=8 if period <= 50 else 0,
                 )
                 stats = calc_stats(touches)
                 result['weekly'][period_name][ema_col] = stats
