@@ -184,6 +184,7 @@ def find_touch_events(
     require_rally_after_negative=False,
     max_bars_below_ema=None,
     min_ema_slope_bars=0,
+    min_ema_slope_pct=0.015,
 ):
     """
     Логика касаний сверху вниз:
@@ -230,13 +231,13 @@ def find_touch_events(
         if not came_from_above:
             continue
 
-        # Фильтр наклона EMA: EMA должна вырасти минимум на 1.5% за N баров назад.
+        # Фильтр наклона EMA: EMA должна вырасти минимум на min_ema_slope_pct за N баров назад.
         # Если EMA flat или почти не движется — боковик/нисходящий тренд, касание не считаем.
         if min_ema_slope_bars > 0 and i >= min_ema_slope_bars:
             ema_past = float(data[ema_col].iloc[i - min_ema_slope_bars])
             if not pd.isna(ema_past) and ema_past > 0:
                 slope_pct = (ema - ema_past) / ema_past
-                if slope_pct < 0.015:  # менее 1.5% роста за N баров → боковик
+                if slope_pct < min_ema_slope_pct:
                     continue
 
         # Close подходит к EMA в пределах 0.15% оставаясь выше неё.
@@ -547,14 +548,17 @@ def get_stock_signals(ticker, category='Other'):
         all_ema_cols = [f'ema_{p}' for p in ema_periods]
         for period in ema_periods:
             ema_col = f'ema_{period}'
-            lower_emas = [col for col in all_ema_cols if col != ema_col]
+            # EMA20: не фильтруем по lower_ema — если low ушёл ниже EMA50,
+            # это негативное касание EMA20 (не удержали), lookahead сам даст negative.
+            lower_emas = [] if period == 20 else [col for col in all_ema_cols if col != ema_col]
             for period_name, period_df in daily_periods.items():
                 touches = find_touch_events(
                     period_df,
                     ema_col,
                     'atr',
-                    lower_ema_cols=lower_emas,
+                    lower_ema_cols=lower_emas if lower_emas else None,
                     cooldown_bars=0,
+                    min_ema_slope_pct=0.01 if period == 20 else 0.015,
                 )
                 stats = calc_stats(touches)
                 result['daily'][period_name][ema_col] = stats
@@ -570,17 +574,18 @@ def get_stock_signals(ticker, category='Other'):
         # Анализ Weekly
         for period in ema_periods:
             ema_col = f'ema_{period}'
-            lower_emas = [col for col in all_ema_cols if col != ema_col]
+            lower_emas = [] if period == 20 else [col for col in all_ema_cols if col != ema_col]
             for period_name, period_df in weekly_periods.items():
                 touches = find_touch_events(
                     period_df,
                     ema_col,
                     'atr',
-                    lower_ema_cols=lower_emas,
+                    lower_ema_cols=lower_emas if lower_emas else None,
                     cooldown_bars=2,
                     require_rally_after_negative=True,
                     max_bars_below_ema=3 if period <= 50 else None,
                     min_ema_slope_bars=8 if period <= 50 else 0,
+                    min_ema_slope_pct=0.01 if period == 20 else 0.015,
                 )
                 stats = calc_stats(touches)
                 result['weekly'][period_name][ema_col] = stats
