@@ -289,6 +289,7 @@ def find_touch_events(
         result = None
         bars_below_ema = 1 if float(data['Close'].iloc[i]) < float(data[ema_col].iloc[i]) else 0
         touched_lower_ema_during = False
+        max_high_seen = curr_high
 
         end_j = min(i + lookahead, len(data) - 1)
         for j in range(i + 1, end_j + 1):
@@ -306,6 +307,7 @@ def find_touch_events(
 
             candles_in_event += 1
             event_indices.append(j)
+            max_high_seen = max(max_high_seen, f_high)
 
             # Если во время события LOW коснулся более низкой EMA — запоминаем флаг
             if lower_ema_cols and not touched_lower_ema_during:
@@ -386,13 +388,15 @@ def find_touch_events(
                         processed_indices.add(idx)
                     continue
 
+            max_rally_pct = round((max_high_seen - curr_close) / curr_close * 100, 2) if result == 'positive' else None
             touches.append({
                 'index': i,
                 'date': data.index[i],
                 'price': curr_close,
                 'ema': ema,
                 'atr': atr,
-                'result': result
+                'result': result,
+                'max_rally_pct': max_rally_pct,
             })
             if result == 'positive':
                 last_positive_event_start_idx = i
@@ -538,17 +542,21 @@ def get_stock_signals(ticker, category='Other'):
         def calc_stats(touches):
             total = len(touches)
             if total == 0:
-                return {'positive': 0, 'negative': 0, 'total': 0, 'probability': 0}
-            
+                return {'positive': 0, 'negative': 0, 'total': 0, 'probability': 0, 'avg_rally_pct': None}
+
             positive = len([t for t in touches if t['result'] == 'positive'])
             negative = len([t for t in touches if t['result'] == 'negative'])
             prob = int(round((positive / total) * 100)) if total > 0 else 0
-            
+
+            rallies = [t['max_rally_pct'] for t in touches if t.get('max_rally_pct') is not None]
+            avg_rally_pct = round(sum(rallies) / len(rallies), 1) if rallies else None
+
             return {
                 'positive': positive,
                 'negative': negative,
                 'total': total,
-                'probability': prob
+                'probability': prob,
+                'avg_rally_pct': avg_rally_pct,
             }
         
         daily_periods = {

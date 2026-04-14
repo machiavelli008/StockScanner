@@ -446,6 +446,11 @@
             letter-spacing: 0.02em;
         }
 
+        .avg-rally {
+            color: #16a34a;
+            font-weight: 600;
+        }
+
         .stats {
             margin-top: 0.2rem;
             color: #475569;
@@ -827,16 +832,20 @@
         function emaRow(label, s1, s2, emaInfo) {
             if (!s1 || !s2) return '';
             const badge = getEmaBadge(emaInfo, s1.probability);
+            const rally1 = s1.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s1.avg_rally_pct}%</div>` : '';
+            const rally2 = s2.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s2.avg_rally_pct}%</div>` : '';
             return `
                 <tr>
                     <td class="ema-name">${label}${badge}</td>
                     <td class="ema-period">
                         <span class="${getProbColor(s1.probability)}">${s1.probability}%</span>
                         <div class="stats">${s1.positive} up | ${s1.negative} down</div>
+                        ${rally1}
                     </td>
                     <td class="ema-period">
                         <span class="${getProbColor(s2.probability)}">${s2.probability}%</span>
                         <div class="stats">${s2.positive} up | ${s2.negative} down</div>
+                        ${rally2}
                     </td>
                 </tr>`;
         }
