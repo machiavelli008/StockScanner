@@ -135,9 +135,9 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             lower_emas = [v for k, v in ema_values.items() if v < ema_val]
             touches_lower = any(current_price <= lv for lv in lower_emas)
             if not touches_lower:
-                prev_close = float(hist['Close'].iloc[-2])
-                prev_ema = float(hist[col].iloc[-2])
-                came_from_above = prev_close >= prev_ema
+                prev_closes = [float(hist['Close'].iloc[-i]) for i in range(2, 5)]
+                prev_emas = [float(hist[col].iloc[-i]) for i in range(2, 5)]
+                came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
 
                 if dist_pct <= 0.15:
                     if came_from_above:
