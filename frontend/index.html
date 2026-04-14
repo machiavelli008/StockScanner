@@ -556,6 +556,48 @@
                 font-size: 0.8rem;
             }
         }
+
+        /* Batch Analyzer */
+        .batch-section {
+            max-width: 1100px;
+            margin: 2rem auto 1rem;
+            border: 1px solid #2a2a3a;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .batch-header {
+            background: #13131f;
+            color: #a0a0c0;
+            padding: 0.85rem 1.2rem;
+            cursor: pointer;
+            font-size: 0.95rem;
+            user-select: none;
+        }
+        .batch-header:hover { background: #1a1a2e; color: #e0e0ff; }
+        .batch-body {
+            background: #0e0e1a;
+            padding: 1.2rem;
+        }
+        .batch-row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+        .batch-col { flex: 1; min-width: 220px; }
+        .batch-label { display: block; color: #7070a0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.4rem; }
+        .batch-textarea {
+            width: 100%; height: 140px; background: #13131f; border: 1px solid #2a2a3a;
+            color: #e0e0ff; border-radius: 6px; padding: 0.6rem; font-size: 0.9rem;
+            resize: vertical; box-sizing: border-box; font-family: monospace;
+        }
+        .batch-textarea:focus { outline: none; border-color: #5555cc; }
+        .batch-options { display: flex; flex-direction: column; justify-content: flex-start; }
+        .batch-check { display: block; color: #c0c0e0; font-size: 0.9rem; margin-bottom: 0.3rem; cursor: pointer; }
+        .batch-check input { margin-right: 0.4rem; accent-color: #5555cc; }
+        .batch-btn {
+            margin-top: 1.2rem; padding: 0.6rem 1.4rem; background: #3a3acc;
+            color: #fff; border: none; border-radius: 6px; font-size: 0.95rem;
+            cursor: pointer; transition: background .2s;
+        }
+        .batch-btn:hover { background: #5555ee; }
+        .batch-btn:disabled { background: #2a2a4a; color: #6060a0; cursor: not-allowed; }
+        .batch-status { margin-top: 0.8rem; font-size: 0.85rem; color: #7070c0; min-height: 1.2rem; }
     </style>
 </head>
 <body>
@@ -592,6 +634,36 @@
         <div id="category-tabs" class="category-tabs" style="display:none;"></div>
 
         <div id="signals-container"></div>
+
+        <!-- Batch Analysis Section -->
+        <section class="batch-section">
+            <div class="batch-header" id="batch-toggle" onclick="toggleBatch()">
+                <span>&#9654; Batch Analyzer — paste your tickers, get Excel</span>
+            </div>
+            <div class="batch-body" id="batch-body" style="display:none;">
+                <div class="batch-row">
+                    <div class="batch-col">
+                        <label class="batch-label">Tickers (comma or line separated)</label>
+                        <textarea id="batch-tickers" class="batch-textarea" placeholder="AAPL, MSFT, TSLA&#10;GOOGL&#10;AMZN"></textarea>
+                    </div>
+                    <div class="batch-col batch-options">
+                        <div>
+                            <label class="batch-label">EMA Periods</label>
+                            <label class="batch-check"><input type="checkbox" id="ema20" checked> EMA 20</label>
+                            <label class="batch-check"><input type="checkbox" id="ema100" checked> EMA 100</label>
+                            <label class="batch-check"><input type="checkbox" id="ema200" checked> EMA 200</label>
+                        </div>
+                        <div style="margin-top:14px;">
+                            <label class="batch-label">Timeframes</label>
+                            <label class="batch-check"><input type="checkbox" id="tf-daily" checked> Daily</label>
+                            <label class="batch-check"><input type="checkbox" id="tf-weekly" checked> Weekly</label>
+                        </div>
+                        <button class="batch-btn" id="batch-run-btn" onclick="runBatch()">Analyze &amp; Download Excel</button>
+                        <div id="batch-status" class="batch-status"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <footer>
             <p>StockScanner 2026 | EMA touch analytics for rapid validation.</p>
@@ -934,6 +1006,68 @@
                 loadSignals();
             }, 60000);
         });
+
+        function toggleBatch() {
+            const body = document.getElementById('batch-body');
+            const toggle = document.getElementById('batch-toggle').querySelector('span');
+            const open = body.style.display === 'none';
+            body.style.display = open ? 'block' : 'none';
+            toggle.textContent = (open ? '▼' : '▶') + ' Batch Analyzer — paste your tickers, get Excel';
+        }
+
+        async function runBatch() {
+            const raw = document.getElementById('batch-tickers').value;
+            const tickers = raw.split(/[\n,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+            if (!tickers.length) {
+                document.getElementById('batch-status').textContent = 'Enter at least one ticker.';
+                return;
+            }
+
+            const emaPeriods = [];
+            if (document.getElementById('ema20').checked) emaPeriods.push(20);
+            if (document.getElementById('ema100').checked) emaPeriods.push(100);
+            if (document.getElementById('ema200').checked) emaPeriods.push(200);
+            if (!emaPeriods.length) {
+                document.getElementById('batch-status').textContent = 'Select at least one EMA period.';
+                return;
+            }
+
+            const timeframes = [];
+            if (document.getElementById('tf-daily').checked) timeframes.push('daily');
+            if (document.getElementById('tf-weekly').checked) timeframes.push('weekly');
+            if (!timeframes.length) {
+                document.getElementById('batch-status').textContent = 'Select at least one timeframe.';
+                return;
+            }
+
+            const btn = document.getElementById('batch-run-btn');
+            const status = document.getElementById('batch-status');
+            btn.disabled = true;
+            status.textContent = `Analyzing ${tickers.length} ticker(s)... this may take a few minutes.`;
+
+            try {
+                const resp = await fetch('/api/analyze-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tickers, ema_periods: emaPeriods, timeframes }),
+                });
+
+                if (!resp.ok) throw new Error('Server error: ' + resp.status);
+
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ema_analysis_${new Date().toISOString().slice(0,10)}.xlsx`;
+                a.click();
+                URL.revokeObjectURL(url);
+                status.textContent = `Done! ${tickers.length} tickers analyzed.`;
+            } catch(e) {
+                status.textContent = 'Error: ' + e.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
     </script>
 </body>
 </html>

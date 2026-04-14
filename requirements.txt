@@ -4,4 +4,6 @@ yfinance==0.2.65
 pandas==2.2.2
 numpy==1.26.4
 python-dotenv==1.0.0
+openpyxl==3.1.2
+python-multipart==0.0.9
 
