@@ -150,17 +150,20 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
                     elif period == 200:
                         signal_type = 'watching'    # EMA200: подход снизу, консолидация
 
-        # EMA20: подавляем плашку если EMA20 снижается (нисходящий тренд)
-        if period == 20 and signal_type is not None and len(hist) > 10:
-            ema_past = float(hist[col].iloc[-11])
-            slope_pct = (ema_val - ema_past) / ema_past * 100
-            if slope_pct <= 0:
+        # EMA20: только в восходящем тренде — EMA20 и EMA50 обе должны расти
+        if period == 20 and signal_type is not None and len(hist) > 20:
+            ema20_past = float(hist[col].iloc[-21])
+            ema50_now = float(hist['ema_50'].iloc[-1])
+            ema50_past = float(hist['ema_50'].iloc[-21])
+            ema20_rising = ema_val > ema20_past
+            ema50_rising = ema50_now > ema50_past
+            if not (ema20_rising and ema50_rising):
                 signal_type = None
 
         # EMA20: подавляем если текущая цена уже у EMA50 (цена упала слишком глубоко)
         if period == 20 and signal_type is not None:
             ema50_val = float(hist['ema_50'].iloc[-1])
-            if current_price <= ema50_val * 1.01:  # цена у EMA50 (±1%)
+            if current_price <= ema50_val * 1.01:
                 signal_type = None
 
         result[col] = {
