@@ -558,6 +558,7 @@
         }
 
         /* Batch Analyzer */
+        /* Batch Analyzer */
         .batch-section {
             max-width: 1100px;
             margin: 2rem auto 1rem;
@@ -574,11 +575,8 @@
             user-select: none;
         }
         .batch-header:hover { background: #1a1a2e; color: #e0e0ff; }
-        .batch-body {
-            background: #0e0e1a;
-            padding: 1.2rem;
-        }
-        .batch-row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+        .batch-body { background: #0e0e1a; padding: 1.2rem; }
+        .batch-form-row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
         .batch-col { flex: 1; min-width: 220px; }
         .batch-label { display: block; color: #7070a0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.4rem; }
         .batch-textarea {
@@ -587,17 +585,43 @@
             resize: vertical; box-sizing: border-box; font-family: monospace;
         }
         .batch-textarea:focus { outline: none; border-color: #5555cc; }
-        .batch-options { display: flex; flex-direction: column; justify-content: flex-start; }
+        .batch-options { display: flex; flex-direction: column; }
         .batch-check { display: block; color: #c0c0e0; font-size: 0.9rem; margin-bottom: 0.3rem; cursor: pointer; }
         .batch-check input { margin-right: 0.4rem; accent-color: #5555cc; }
+        .batch-btns { display: flex; gap: 0.6rem; margin-top: 1.2rem; flex-wrap: wrap; }
         .batch-btn {
-            margin-top: 1.2rem; padding: 0.6rem 1.4rem; background: #3a3acc;
-            color: #fff; border: none; border-radius: 6px; font-size: 0.95rem;
-            cursor: pointer; transition: background .2s;
+            padding: 0.6rem 1.2rem; background: #3a3acc; color: #fff;
+            border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: background .2s;
         }
         .batch-btn:hover { background: #5555ee; }
         .batch-btn:disabled { background: #2a2a4a; color: #6060a0; cursor: not-allowed; }
-        .batch-status { margin-top: 0.8rem; font-size: 0.85rem; color: #7070c0; min-height: 1.2rem; }
+        .batch-btn-cancel { background: #4a2a2a; }
+        .batch-btn-cancel:hover { background: #6a3a3a; }
+        .batch-btn-excel { background: #2a5a2a; }
+        .batch-btn-excel:hover { background: #3a7a3a; }
+        .batch-status { margin-top: 0.7rem; font-size: 0.85rem; color: #7070c0; min-height: 1.2rem; }
+        .batch-progress { height: 4px; background: #2a2a3a; border-radius: 2px; margin-top: 0.6rem; overflow: hidden; }
+        .batch-progress-bar { height: 100%; background: #5555cc; border-radius: 2px; transition: width 0.3s; width: 0%; }
+        /* Results table */
+        .batch-results { margin-top: 1.4rem; overflow-x: auto; }
+        .batch-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .batch-table th {
+            background: #13131f; color: #8080b0; padding: 0.45rem 0.6rem;
+            text-align: center; white-space: nowrap; cursor: pointer; user-select: none;
+            border-bottom: 1px solid #2a2a3a; position: sticky; top: 0;
+        }
+        .batch-table th:hover { color: #c0c0ff; }
+        .batch-table th.sort-asc::after { content: ' ▲'; }
+        .batch-table th.sort-desc::after { content: ' ▼'; }
+        .batch-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #1a1a2a; text-align: center; color: #c0c0e0; }
+        .batch-table td:first-child { text-align: left; font-weight: 600; color: #e0e0ff; }
+        .batch-table tr:hover td { background: #111122; }
+        .batch-table tr.loading td { color: #4040608; }
+        .bp-good { color: #4caf7a; font-weight: 600; }
+        .bp-bad  { color: #e05050; }
+        .bp-mid  { color: #c0c060; }
+        .bp-na   { color: #404060; }
+        .batch-detail { font-size: 0.75rem; color: #505080; display: block; }
     </style>
 </head>
 <body>
@@ -637,11 +661,11 @@
 
         <!-- Batch Analysis Section -->
         <section class="batch-section">
-            <div class="batch-header" id="batch-toggle" onclick="toggleBatch()">
-                <span>&#9654; Batch Analyzer — paste your tickers, get Excel</span>
+            <div class="batch-header" onclick="toggleBatch()">
+                <span id="batch-toggle-label">&#9654; Batch Analyzer — analyze multiple tickers at once</span>
             </div>
             <div class="batch-body" id="batch-body" style="display:none;">
-                <div class="batch-row">
+                <div class="batch-form-row">
                     <div class="batch-col">
                         <label class="batch-label">Tickers (comma or line separated)</label>
                         <textarea id="batch-tickers" class="batch-textarea" placeholder="AAPL, MSFT, TSLA&#10;GOOGL&#10;AMZN"></textarea>
@@ -649,18 +673,29 @@
                     <div class="batch-col batch-options">
                         <div>
                             <label class="batch-label">EMA Periods</label>
-                            <label class="batch-check"><input type="checkbox" id="ema20" checked> EMA 20</label>
-                            <label class="batch-check"><input type="checkbox" id="ema100" checked> EMA 100</label>
-                            <label class="batch-check"><input type="checkbox" id="ema200" checked> EMA 200</label>
+                            <label class="batch-check"><input type="checkbox" id="b-ema20" checked> EMA 20</label>
+                            <label class="batch-check"><input type="checkbox" id="b-ema100" checked> EMA 100</label>
+                            <label class="batch-check"><input type="checkbox" id="b-ema200" checked> EMA 200</label>
                         </div>
                         <div style="margin-top:14px;">
                             <label class="batch-label">Timeframes</label>
-                            <label class="batch-check"><input type="checkbox" id="tf-daily" checked> Daily</label>
-                            <label class="batch-check"><input type="checkbox" id="tf-weekly" checked> Weekly</label>
+                            <label class="batch-check"><input type="checkbox" id="b-daily" checked> Daily</label>
+                            <label class="batch-check"><input type="checkbox" id="b-weekly" checked> Weekly</label>
                         </div>
-                        <button class="batch-btn" id="batch-run-btn" onclick="runBatch()">Analyze &amp; Download Excel</button>
+                        <div class="batch-btns">
+                            <button class="batch-btn" id="batch-run-btn" onclick="runBatch()">&#9654; Analyze</button>
+                            <button class="batch-btn batch-btn-cancel" id="batch-cancel-btn" onclick="cancelBatch()" style="display:none;">&#9632; Stop</button>
+                            <button class="batch-btn batch-btn-excel" id="batch-excel-btn" onclick="downloadBatchExcel()" style="display:none;">&#8595; Download Excel</button>
+                        </div>
+                        <div class="batch-progress" id="batch-progress" style="display:none;"><div class="batch-progress-bar" id="batch-progress-bar"></div></div>
                         <div id="batch-status" class="batch-status"></div>
                     </div>
+                </div>
+                <div class="batch-results" id="batch-results" style="display:none;">
+                    <table class="batch-table" id="batch-table">
+                        <thead id="batch-thead"></thead>
+                        <tbody id="batch-tbody"></tbody>
+                    </table>
                 </div>
             </div>
         </section>
@@ -1007,53 +1042,233 @@
             }, 60000);
         });
 
+        // ── Batch Analyzer ──────────────────────────────────────────
+        let batchCancelled = false;
+        let batchCollectedRows = [];
+        let batchSortCol = null;
+        let batchSortAsc = true;
+
         function toggleBatch() {
             const body = document.getElementById('batch-body');
-            const toggle = document.getElementById('batch-toggle').querySelector('span');
+            const label = document.getElementById('batch-toggle-label');
             const open = body.style.display === 'none';
             body.style.display = open ? 'block' : 'none';
-            toggle.textContent = (open ? '▼' : '▶') + ' Batch Analyzer — paste your tickers, get Excel';
+            label.textContent = (open ? '▼' : '▶') + ' Batch Analyzer — analyze multiple tickers at once';
+        }
+
+        function getSelectedEmas() {
+            const r = [];
+            if (document.getElementById('b-ema20').checked) r.push(20);
+            if (document.getElementById('b-ema100').checked) r.push(100);
+            if (document.getElementById('b-ema200').checked) r.push(200);
+            return r;
+        }
+        function getSelectedTfs() {
+            const r = [];
+            if (document.getElementById('b-daily').checked) r.push('daily');
+            if (document.getElementById('b-weekly').checked) r.push('weekly');
+            return r;
+        }
+
+        function buildBatchTableHeader(periods, timeframes) {
+            const tfLabel = tf => tf === 'daily' ? 'D' : 'W';
+            const cols = [
+                { key: 'ticker', label: 'Ticker' },
+                { key: 'price',  label: 'Price' },
+            ];
+            for (const tf of timeframes)
+                for (const p of periods) {
+                    cols.push({ key: `${tfLabel(tf)}_ema${p}_5y`,  label: `${tfLabel(tf)} EMA${p} 5y`  });
+                    cols.push({ key: `${tfLabel(tf)}_ema${p}_10y`, label: `${tfLabel(tf)} EMA${p} 10y` });
+                }
+            const thead = document.getElementById('batch-thead');
+            thead.innerHTML = '<tr>' + cols.map(c =>
+                `<th data-key="${c.key}" onclick="sortBatchTable('${c.key}')">${c.label}</th>`
+            ).join('') + '</tr>';
+            return cols;
+        }
+
+        function probClass(p) {
+            if (p === null || p === undefined) return 'bp-na';
+            if (p >= 65) return 'bp-good';
+            if (p <= 40) return 'bp-bad';
+            return 'bp-mid';
+        }
+
+        function extractBatchRow(ticker, signal, periods, timeframes) {
+            const tfLabel = tf => tf === 'daily' ? 'D' : 'W';
+            const row = { ticker, price: signal ? signal.current_price : null };
+            for (const tf of timeframes) {
+                const tfData = signal ? (signal[tf] || {}) : {};
+                for (const p of periods) {
+                    const col = `ema_${p}`;
+                    const s1 = ((tfData.period_1_5y || {})[col]) || {};
+                    const s2 = ((tfData.period_10y  || {})[col]) || {};
+                    const key = `${tfLabel(tf)}_ema${p}`;
+                    row[key + '_5y']  = signal ? { prob: s1.probability ?? null, pos: s1.positive ?? 0, neg: s1.negative ?? 0 } : null;
+                    row[key + '_10y'] = signal ? { prob: s2.probability ?? null, pos: s2.positive ?? 0, neg: s2.negative ?? 0 } : null;
+                }
+            }
+            return row;
+        }
+
+        function renderBatchCell(cell) {
+            if (!cell) return '<td class="bp-na">—</td>';
+            if (cell.prob === null) return '<td class="bp-na">—</td>';
+            return `<td class="${probClass(cell.prob)}">
+                ${cell.prob}%
+                <span class="batch-detail">${cell.pos}↑ ${cell.neg}↓</span>
+            </td>`;
+        }
+
+        function renderBatchRow(row, periods, timeframes, isLoading) {
+            const tfLabel = tf => tf === 'daily' ? 'D' : 'W';
+            if (isLoading) {
+                const span = 2 + timeframes.length * periods.length * 2;
+                return `<tr class="loading"><td>${row.ticker}</td><td colspan="${span-1}" style="color:#404060;">analyzing...</td></tr>`;
+            }
+            let cells = `<td>${row.ticker}</td><td>${row.price !== null ? '$' + row.price : '—'}</td>`;
+            for (const tf of timeframes)
+                for (const p of periods) {
+                    const key = `${tfLabel(tf)}_ema${p}`;
+                    cells += renderBatchCell(row[key + '_5y']);
+                    cells += renderBatchCell(row[key + '_10y']);
+                }
+            return `<tr>${cells}</tr>`;
+        }
+
+        function sortBatchTable(key) {
+            const ths = document.querySelectorAll('#batch-thead th');
+            ths.forEach(th => th.classList.remove('sort-asc', 'sort-desc'));
+            if (batchSortCol === key) batchSortAsc = !batchSortAsc;
+            else { batchSortCol = key; batchSortAsc = false; }
+            const th = document.querySelector(`#batch-thead th[data-key="${key}"]`);
+            if (th) th.classList.add(batchSortAsc ? 'sort-asc' : 'sort-desc');
+            rerenderBatchTable();
+        }
+
+        function rerenderBatchTable() {
+            const periods = getSelectedEmas();
+            const timeframes = getSelectedTfs();
+            const tfLabel = tf => tf === 'daily' ? 'D' : 'W';
+            let rows = [...batchCollectedRows];
+            if (batchSortCol) {
+                rows.sort((a, b) => {
+                    let va = a[batchSortCol], vb = b[batchSortCol];
+                    if (va && typeof va === 'object') va = va.prob ?? -1;
+                    if (vb && typeof vb === 'object') vb = vb.prob ?? -1;
+                    if (va === null || va === undefined) va = -1;
+                    if (vb === null || vb === undefined) vb = -1;
+                    return batchSortAsc ? va - vb : vb - va;
+                });
+            }
+            document.getElementById('batch-tbody').innerHTML =
+                rows.map(r => renderBatchRow(r, periods, timeframes, false)).join('');
+        }
+
+        function cancelBatch() {
+            batchCancelled = true;
+            document.getElementById('batch-cancel-btn').style.display = 'none';
         }
 
         async function runBatch() {
-            const raw = document.getElementById('batch-tickers').value;
-            const tickers = raw.split(/[\n,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
-            if (!tickers.length) {
-                document.getElementById('batch-status').textContent = 'Enter at least one ticker.';
-                return;
+            const tickers = document.getElementById('batch-tickers').value
+                .split(/[\n,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+            if (!tickers.length) { document.getElementById('batch-status').textContent = 'Enter at least one ticker.'; return; }
+            const periods = getSelectedEmas();
+            const timeframes = getSelectedTfs();
+            if (!periods.length || !timeframes.length) {
+                document.getElementById('batch-status').textContent = 'Select at least one EMA and timeframe.'; return;
             }
 
-            const emaPeriods = [];
-            if (document.getElementById('ema20').checked) emaPeriods.push(20);
-            if (document.getElementById('ema100').checked) emaPeriods.push(100);
-            if (document.getElementById('ema200').checked) emaPeriods.push(200);
-            if (!emaPeriods.length) {
-                document.getElementById('batch-status').textContent = 'Select at least one EMA period.';
-                return;
+            batchCancelled = false;
+            batchCollectedRows = [];
+            batchSortCol = null;
+            batchSortAsc = true;
+
+            buildBatchTableHeader(periods, timeframes);
+            document.getElementById('batch-results').style.display = 'block';
+            document.getElementById('batch-tbody').innerHTML = '';
+            document.getElementById('batch-excel-btn').style.display = 'none';
+            document.getElementById('batch-run-btn').disabled = true;
+            document.getElementById('batch-cancel-btn').style.display = 'inline-block';
+            document.getElementById('batch-progress').style.display = 'block';
+            document.getElementById('batch-progress-bar').style.width = '0%';
+
+            for (let i = 0; i < tickers.length; i++) {
+                if (batchCancelled) break;
+                const ticker = tickers[i];
+                document.getElementById('batch-status').textContent = `(${i+1}/${tickers.length}) Analyzing ${ticker}...`;
+                document.getElementById('batch-progress-bar').style.width = `${Math.round((i/tickers.length)*100)}%`;
+
+                // Add placeholder row
+                const tbody = document.getElementById('batch-tbody');
+                const placeholder = document.createElement('tr');
+                placeholder.id = `brow-${ticker}`;
+                placeholder.className = 'loading';
+                placeholder.innerHTML = `<td>${ticker}</td><td colspan="99" style="color:#404060;">analyzing...</td>`;
+                tbody.appendChild(placeholder);
+
+                let signal = null;
+                try {
+                    const resp = await fetch(`/api/signals/${ticker}`);
+                    const data = await resp.json();
+                    if (!data.error) signal = data;
+                } catch(e) { /* skip */ }
+
+                const row = extractBatchRow(ticker, signal, periods, timeframes);
+                batchCollectedRows.push(row);
+
+                // Replace placeholder with real row
+                const existing = document.getElementById(`brow-${ticker}`);
+                if (existing) existing.outerHTML = renderBatchRow(row, periods, timeframes, false);
+
+                if (i < tickers.length - 1 && !batchCancelled) await new Promise(r => setTimeout(r, 1200));
             }
 
-            const timeframes = [];
-            if (document.getElementById('tf-daily').checked) timeframes.push('daily');
-            if (document.getElementById('tf-weekly').checked) timeframes.push('weekly');
-            if (!timeframes.length) {
-                document.getElementById('batch-status').textContent = 'Select at least one timeframe.';
-                return;
-            }
+            document.getElementById('batch-progress-bar').style.width = '100%';
+            const done = batchCollectedRows.length;
+            document.getElementById('batch-status').textContent = batchCancelled
+                ? `Stopped after ${done} ticker(s).`
+                : `Done! ${done} ticker(s) analyzed.`;
+            document.getElementById('batch-cancel-btn').style.display = 'none';
+            document.getElementById('batch-run-btn').disabled = false;
+            if (done > 0) document.getElementById('batch-excel-btn').style.display = 'inline-block';
+        }
 
-            const btn = document.getElementById('batch-run-btn');
-            const status = document.getElementById('batch-status');
+        async function downloadBatchExcel() {
+            if (!batchCollectedRows.length) return;
+            const periods = getSelectedEmas();
+            const timeframes = getSelectedTfs();
+            const tfLabel = tf => tf === 'daily' ? 'D' : 'W';
+
+            // Flatten rows for Excel
+            const excelRows = batchCollectedRows.map(row => {
+                const flat = { Ticker: row.ticker, Price: row.price };
+                for (const tf of timeframes)
+                    for (const p of periods) {
+                        const key = `${tfLabel(tf)}_ema${p}`;
+                        const s5 = row[key + '_5y'];
+                        const s10 = row[key + '_10y'];
+                        flat[`${tfLabel(tf)} EMA${p} 5y %`]  = s5  ? s5.prob  : null;
+                        flat[`${tfLabel(tf)} EMA${p} 5y pos`] = s5  ? s5.pos   : null;
+                        flat[`${tfLabel(tf)} EMA${p} 5y neg`] = s5  ? s5.neg   : null;
+                        flat[`${tfLabel(tf)} EMA${p} 10y %`] = s10 ? s10.prob : null;
+                        flat[`${tfLabel(tf)} EMA${p} 10y pos`] = s10 ? s10.pos  : null;
+                        flat[`${tfLabel(tf)} EMA${p} 10y neg`] = s10 ? s10.neg  : null;
+                    }
+                return flat;
+            });
+
+            const btn = document.getElementById('batch-excel-btn');
             btn.disabled = true;
-            status.textContent = `Analyzing ${tickers.length} ticker(s)... this may take a few minutes.`;
-
             try {
-                const resp = await fetch('/api/analyze-batch', {
+                const resp = await fetch('/api/batch-to-excel', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tickers, ema_periods: emaPeriods, timeframes }),
+                    body: JSON.stringify({ rows: excelRows }),
                 });
-
-                if (!resp.ok) throw new Error('Server error: ' + resp.status);
-
+                if (!resp.ok) throw new Error('Server error');
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1061,9 +1276,8 @@
                 a.download = `ema_analysis_${new Date().toISOString().slice(0,10)}.xlsx`;
                 a.click();
                 URL.revokeObjectURL(url);
-                status.textContent = `Done! ${tickers.length} tickers analyzed.`;
             } catch(e) {
-                status.textContent = 'Error: ' + e.message;
+                document.getElementById('batch-status').textContent = 'Excel error: ' + e.message;
             } finally {
                 btn.disabled = false;
             }

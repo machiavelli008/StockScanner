@@ -708,63 +708,30 @@ def get_signal_by_ticker(ticker: str):
     return {"error": f"Could not get data for {ticker}"}
 
 
-class BatchRequest(BaseModel):
-    tickers: list[str]
-    ema_periods: list[int] = [20, 100, 200]
-    timeframes: list[str] = ["daily", "weekly"]
-
-
-@app.post("/api/analyze-batch")
-def analyze_batch(req: BatchRequest):
-    """Анализирует список тикеров и возвращает Excel файл."""
-    selected_emas = [p for p in req.ema_periods if p in [20, 50, 100, 200]]
-    selected_tfs = [tf for tf in req.timeframes if tf in ["daily", "weekly"]]
-
-    rows = []
-    for i, raw_ticker in enumerate(req.tickers):
-        ticker = raw_ticker.strip().upper()
-        if not ticker:
-            continue
-        if i > 0:
-            time.sleep(1)
-        signal = get_stock_signals(ticker)
-        if signal is None:
-            rows.append({"Ticker": ticker, "Status": "Error"})
-            continue
-
-        row = {"Ticker": ticker, "Status": "OK", "Price": signal.get("current_price", "")}
-        for tf in selected_tfs:
-            tf_data = signal.get(tf, {})
-            p1 = tf_data.get("period_1_5y", {})
-            p2 = tf_data.get("period_10y", {})
-            tf_label = "D" if tf == "daily" else "W"
-            for period in selected_emas:
-                col = f"ema_{period}"
-                s1 = p1.get(col, {})
-                s2 = p2.get(col, {})
-                prefix = f"{tf_label}_EMA{period}"
-                row[f"{prefix}_5y_%"]   = s1.get("probability", 0)
-                row[f"{prefix}_5y_pos"] = s1.get("positive", 0)
-                row[f"{prefix}_5y_neg"] = s1.get("negative", 0)
-                row[f"{prefix}_5y_tot"] = s1.get("total", 0)
-                row[f"{prefix}_10y_%"]   = s2.get("probability", 0)
-                row[f"{prefix}_10y_pos"] = s2.get("positive", 0)
-                row[f"{prefix}_10y_neg"] = s2.get("negative", 0)
-                row[f"{prefix}_10y_tot"] = s2.get("total", 0)
-        rows.append(row)
-
+def _build_excel_from_rows(rows: list[dict]) -> io.BytesIO:
+    """Генерирует Excel из списка строк."""
     df = pd.DataFrame(rows)
-
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="EMA Analysis")
         ws = writer.sheets["EMA Analysis"]
-        # Авто-ширина колонок
         for col_cells in ws.columns:
             max_len = max((len(str(c.value)) for c in col_cells if c.value), default=10)
             ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 25)
-
     output.seek(0)
+    return output
+
+
+class BatchExcelRequest(BaseModel):
+    rows: list[dict]
+
+
+@app.post("/api/batch-to-excel")
+def batch_to_excel(req: BatchExcelRequest):
+    """Конвертирует готовые данные в Excel (без повторного запроса к yfinance)."""
+    if not req.rows:
+        return {"error": "No data"}
+    output = _build_excel_from_rows(req.rows)
     filename = f"ema_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(
         output,
