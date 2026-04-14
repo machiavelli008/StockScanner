@@ -712,8 +712,10 @@ def get_signals():
 
 @app.post("/api/refresh")
 def refresh_signals_endpoint():
-    """Перезагрузить сигналы из signals.json."""
-    load_signals_from_file()
+    """Пересчитать сигналы заново (полный refresh)."""
+    thread = threading.Thread(target=refresh_signals, daemon=True)
+    thread.start()
+    thread.join(timeout=300)
     with cache_lock:
         last_update = signals_cache['last_update']
         last_update_iso = last_update.isoformat() if last_update is not None else None
