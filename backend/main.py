@@ -157,6 +157,15 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             if slope_pct <= 0:
                 signal_type = None
 
+        # EMA20: подавляем если цена касалась EMA50 за последние 5 баров (слишком глубокое падение)
+        if period == 20 and signal_type is not None and len(hist) >= 5:
+            for i in range(1, 6):
+                bar_low = float(hist['Low'].iloc[-i])
+                bar_ema50 = float(hist['ema_50'].iloc[-i])
+                if bar_low <= bar_ema50 * 1.002:
+                    signal_type = None
+                    break
+
         result[col] = {
             'value': round(ema_val, 2),
             'distance_pct': dist_pct,
