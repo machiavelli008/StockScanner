@@ -765,13 +765,19 @@
         }
 
         async function refreshAndLoadSignals() {
-            setStatus('Refreshing from source...');
-            try {
-                await fetch('/api/refresh', { method: 'POST' });
-            } catch (error) {
-                console.error('Refresh error:', error);
-            }
-            await loadSignals();
+            setStatus('Refresh started — this takes 2-3 min...');
+            const before = await fetch('/api/signals').then(r => r.json()).then(d => d.last_update).catch(() => null);
+            await fetch('/api/refresh', { method: 'POST' }).catch(() => {});
+            let elapsed = 0;
+            const interval = setInterval(async () => {
+                elapsed += 5;
+                setStatus(`Refreshing... ${elapsed}s`);
+                const data = await fetch('/api/signals').then(r => r.json()).catch(() => null);
+                if (data && data.last_update && data.last_update !== before) {
+                    clearInterval(interval);
+                    await loadSignals();
+                }
+            }, 5000);
         }
 
         async function loadTickerFromInput() {

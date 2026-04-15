@@ -758,18 +758,10 @@ def get_signals():
 
 @app.post("/api/refresh")
 def refresh_signals_endpoint():
-    """Пересчитать сигналы заново (полный refresh)."""
+    """Запускает пересчёт сигналов в фоне и сразу возвращает ответ."""
     thread = threading.Thread(target=refresh_signals, daemon=True)
     thread.start()
-    thread.join(timeout=300)
-    with cache_lock:
-        last_update = signals_cache['last_update']
-        last_update_iso = last_update.isoformat() if last_update is not None else None
-        return {
-            "status": "done",
-            "count": len(signals_cache['signals']),
-            "last_update": last_update_iso,
-        }
+    return {"status": "started"}
 
 @app.get("/api/signals/{ticker}")
 def get_signal_by_ticker(ticker: str):
