@@ -412,6 +412,48 @@ def find_touch_events(
     return touches
 
 
+def compute_rally_between_touches(touches, data, cluster_bars=20):
+    """
+    Группирует касания в кластеры по времени и считает ралли от первого касания
+    кластера до начала следующего кластера.
+    Кластер: последовательные позитивные касания в пределах cluster_bars баров.
+    """
+    pos = [t for t in touches if t['result'] == 'positive']
+    for t in touches:
+        if t['result'] != 'positive':
+            t['max_rally_pct'] = None
+
+    if not pos:
+        return touches
+
+    # Строим кластеры по временному расстоянию между касаниями
+    clusters = [[pos[0]]]
+    for k in range(1, len(pos)):
+        prev = pos[k - 1]
+        curr = pos[k]
+        bars_between = curr['index'] - prev['index']
+        if bars_between <= cluster_bars:
+            clusters[-1].append(curr)
+        else:
+            clusters.append([curr])
+
+    # Для каждого кластера: ралли от первого касания до начала следующего кластера
+    for c_idx, cluster in enumerate(clusters):
+        first_touch = cluster[0]
+        start_i     = first_touch['index']
+        touch_price = first_touch['price']
+
+        end_i = clusters[c_idx + 1][0]['index'] if c_idx + 1 < len(clusters) else len(data) - 1
+        max_high = float(data['High'].iloc[start_i:end_i + 1].max())
+        rally_pct = round((max_high - touch_price) / touch_price * 100, 2)
+
+        first_touch['max_rally_pct'] = rally_pct
+        for t in cluster[1:]:
+            t['max_rally_pct'] = None  # не учитываем в среднем — это один кластер
+
+    return touches
+
+
 def split_by_year_windows(df, end_date=None):
     """Разделяет данные на окна: 1-5 лет и все 10 лет целиком."""
     if df.empty:
@@ -587,6 +629,8 @@ def get_stock_signals(ticker, category='Other'):
                     cooldown_bars=0,
                     min_ema_slope_pct=0.01 if period == 20 else 0.015,
                 )
+                if period == 200:
+                    touches = compute_rally_between_touches(touches, period_df, cluster_bars=20)
                 stats = calc_stats(touches)
                 result['daily'][period_name][ema_col] = stats
 
@@ -614,6 +658,8 @@ def get_stock_signals(ticker, category='Other'):
                     min_ema_slope_bars=8 if period <= 50 else 0,
                     min_ema_slope_pct=0.01 if period == 20 else 0.015,
                 )
+                if period == 200:
+                    touches = compute_rally_between_touches(touches, period_df, cluster_bars=26)
                 stats = calc_stats(touches)
                 result['weekly'][period_name][ema_col] = stats
 
