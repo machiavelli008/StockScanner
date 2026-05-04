@@ -855,20 +855,36 @@ if __name__ == "__main__":
     import uvicorn
     
     def auto_refresh_background():
-        """Пн-Чт: 20:15 UTC (за 45 мин до закрытия), Пт: 20:00 UTC (за 1ч до закрытия)"""
+        """
+        Пн-Чт: за 45 мин до закрытия NYSE.
+        Пт: за 1 час до закрытия NYSE (покрывает дневные и недельные свечи).
+        Летнее время США (EDT, UTC-4): Пн-Чт 19:15 UTC, Пт 19:00 UTC.
+        Зимнее время США (EST, UTC-5): Пн-Чт 20:15 UTC, Пт 20:00 UTC.
+        """
+        import zoneinfo
         global background_thread_stop
-        print("[AUTO-REFRESH] Started. Mon-Thu: 20:15 UTC, Fri: 20:00 UTC.")
+        print("[AUTO-REFRESH] Started. Summer: Mon-Thu 19:15 UTC / Fri 19:00 UTC. Winter: Mon-Thu 20:15 UTC / Fri 20:00 UTC.")
+
+        et_tz = zoneinfo.ZoneInfo("America/New_York")
 
         while not background_thread_stop:
             try:
-                now = pd.Timestamp.now('UTC')
-                is_friday = now.dayofweek == 4
-                next_run = now.normalize() + pd.Timedelta(hours=20, minutes=0 if is_friday else 15)
-                if next_run <= now:
+                now_utc = pd.Timestamp.now('UTC')
+                now_et = now_utc.tz_convert(et_tz)
+                # Определяем смещение ET от UTC (-4 летом, -5 зимой)
+                et_offset = now_et.utcoffset().total_seconds() / 3600  # -4 или -5
+                is_friday = now_utc.dayofweek == 4
+                # NYSE закрывается в 16:00 ET = 20:00 UTC (зима) или 19:00 UTC (лето)
+                # Пн-Чт: за 45 мин до закрытия; Пт: за 1 час до закрытия
+                close_utc_hour = 16 + abs(int(et_offset))  # 20 зимой, 19 летом
+                refresh_minute = 0 if is_friday else 15
+                refresh_utc_hour = close_utc_hour - 1 if is_friday else close_utc_hour
+                next_run = now_utc.normalize() + pd.Timedelta(hours=refresh_utc_hour, minutes=refresh_minute)
+                if next_run <= now_utc:
                     next_run += pd.Timedelta(days=1)
                 while next_run.dayofweek >= 5:  # пропускаем выходные
                     next_run += pd.Timedelta(days=1)
-                wait_seconds = (next_run - now).total_seconds()
+                wait_seconds = (next_run - now_utc).total_seconds()
                 print(f"[AUTO-REFRESH] Next: {next_run.strftime('%Y-%m-%d %H:%M UTC')} (in {int(wait_seconds/3600)}h {int((wait_seconds%3600)/60)}m)")
                 time.sleep(wait_seconds)
                 if not background_thread_stop:
@@ -887,7 +903,7 @@ if __name__ == "__main__":
     
     print("\n" + "="*50)
     print("🚀 StockScanner Backend Starting...")
-    print("📊 Data auto-refresh: Mon-Thu 20:15 UTC, Fri 20:00 UTC")
+    print("📊 Data auto-refresh: Summer Mon-Thu 19:15/Fri 19:00 UTC | Winter Mon-Thu 20:15/Fri 20:00 UTC")
     print(f"🌐 API: http://127.0.0.1:{SERVER_PORT}")
     print(f"📄 Docs: http://127.0.0.1:{SERVER_PORT}/docs")
     print("="*50 + "\n")
