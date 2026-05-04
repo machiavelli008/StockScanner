@@ -855,17 +855,26 @@ if __name__ == "__main__":
     import uvicorn
     
     def auto_refresh_background():
-        """Фоновый поток для автоматического обновления данных каждые 5 минут"""
+        """Пн-Чт: 20:15 UTC (за 45 мин до закрытия), Пт: 20:00 UTC (за 1ч до закрытия)"""
         global background_thread_stop
-        print("[AUTO-REFRESH] Background updater started. Will refresh every 5 minutes.")
-        
+        print("[AUTO-REFRESH] Started. Mon-Thu: 20:15 UTC, Fri: 20:00 UTC.")
+
         while not background_thread_stop:
             try:
-                time.sleep(AUTO_REFRESH_INTERVAL_SECONDS)
+                now = pd.Timestamp.now('UTC')
+                is_friday = now.dayofweek == 4
+                next_run = now.normalize() + pd.Timedelta(hours=20, minutes=0 if is_friday else 15)
+                if next_run <= now:
+                    next_run += pd.Timedelta(days=1)
+                while next_run.dayofweek >= 5:  # пропускаем выходные
+                    next_run += pd.Timedelta(days=1)
+                wait_seconds = (next_run - now).total_seconds()
+                print(f"[AUTO-REFRESH] Next: {next_run.strftime('%Y-%m-%d %H:%M UTC')} (in {int(wait_seconds/3600)}h {int((wait_seconds%3600)/60)}m)")
+                time.sleep(wait_seconds)
                 if not background_thread_stop:
-                    print(f"[AUTO-REFRESH] Starting automatic refresh at {pd.Timestamp.now()}")
+                    print(f"[AUTO-REFRESH] Starting refresh at {pd.Timestamp.now()}")
                     refresh_signals()
-                    print(f"[AUTO-REFRESH] Automatic refresh completed at {pd.Timestamp.now()}")
+                    print(f"[AUTO-REFRESH] Completed at {pd.Timestamp.now()}")
             except Exception as e:
                 print(f"[AUTO-REFRESH] Error during automatic refresh: {e}")
     
@@ -878,7 +887,7 @@ if __name__ == "__main__":
     
     print("\n" + "="*50)
     print("🚀 StockScanner Backend Starting...")
-    print("📊 Data auto-refresh: ENABLED (every 5 minutes)")
+    print("📊 Data auto-refresh: Mon-Thu 20:15 UTC, Fri 20:00 UTC")
     print(f"🌐 API: http://127.0.0.1:{SERVER_PORT}")
     print(f"📄 Docs: http://127.0.0.1:{SERVER_PORT}/docs")
     print("="*50 + "\n")
