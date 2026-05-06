@@ -1038,6 +1038,7 @@
         }
 
         function hasSignal(signal) {
+            if (signal.sideways_warning) return false;
             const ema = signal.current_ema || {};
             const emaW = signal.current_ema_weekly || ema;
             const allEntries = [...Object.entries(ema), ...Object.entries(emaW)];
