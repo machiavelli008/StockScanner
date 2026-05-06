@@ -472,6 +472,29 @@
             font-size: 0.76rem;
         }
 
+        .signal-filters {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            margin-top: 1.2rem;
+            padding: 0.85rem 1rem;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            box-shadow: var(--shadow-soft);
+        }
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .filter-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--muted);
+            min-width: 90px;
+        }
         .category-tabs {
             display: flex;
             flex-wrap: wrap;
@@ -716,7 +739,22 @@
             </div>
         </section>
 
-        <div id="category-tabs" class="category-tabs" style="display:none;"></div>
+        <div id="signal-filters" class="signal-filters" style="display:none;">
+            <div class="filter-row">
+                <span class="filter-label">Timeframe:</span>
+                <button class="tab-btn active" onclick="setFilter('tf','all')">All</button>
+                <button class="tab-btn" onclick="setFilter('tf','daily')">Daily</button>
+                <button class="tab-btn" onclick="setFilter('tf','weekly')">Weekly</button>
+            </div>
+            <div class="filter-row">
+                <span class="filter-label">EMA:</span>
+                <button class="tab-btn active" onclick="setFilter('ema','all')">All</button>
+                <button class="tab-btn" onclick="setFilter('ema','20')">EMA 20</button>
+                <button class="tab-btn" onclick="setFilter('ema','50')">EMA 50</button>
+                <button class="tab-btn" onclick="setFilter('ema','200')">EMA 200</button>
+                <button class="tab-btn" onclick="setFilter('ema','hammer')">🔨 Hammer</button>
+            </div>
+        </div>
 
         <div id="signals-container"></div>
 
@@ -965,13 +1003,12 @@
             `;
         }
 
-        // Global state for tabs
+        // Global state
         let _allSignals = [];
-        let _activeTab = 'All';
+        let _filterTf = 'all';   // 'all' | 'daily' | 'weekly'
+        let _filterEma = 'all';  // 'all' | '20' | '50' | '200' | 'hammer'
 
         function getSignalPriority(signal) {
-            if (signal.sideways_warning) return 10; // боковики всегда в конце
-
             const ema = signal.current_ema || {};
             const emaW = signal.current_ema_weekly || ema;
             const entries = [...Object.entries(ema), ...Object.entries(emaW)];
@@ -983,7 +1020,8 @@
                 return 1;
             if (entries.some(([, v]) => v.signal_type === 'watching'))
                 return 2;
-            return 3;
+            if (signal.hammer_signal) return 3;
+            return 4;
         }
 
         function getMaxProb(signal) {
@@ -999,43 +1037,59 @@
             });
         }
 
-        function buildTabs(signals) {
-            // Collect categories in order: All, then unique categories in appearance order
-            const seen = [];
-            for (const s of signals) {
-                const cat = s.category || 'Other';
-                if (!seen.includes(cat)) seen.push(cat);
-            }
-
-            const tabsEl = document.getElementById('category-tabs');
-            if (seen.length <= 1) {
-                tabsEl.style.display = 'none';
-                return;
-            }
-
-            const categories = ['All', ...seen];
-            tabsEl.style.display = 'flex';
-            tabsEl.innerHTML = categories.map(cat => {
-                const count = cat === 'All' ? signals.length : signals.filter(s => (s.category || 'Other') === cat).length;
-                const active = cat === _activeTab ? ' active' : '';
-                return `<button class="tab-btn${active}" onclick="selectTab(${escapeHtml(JSON.stringify(cat))})">${escapeHtml(cat)}<span class="tab-count">${count}</span></button>`;
-            }).join('');
+        function hasSignal(signal) {
+            const ema = signal.current_ema || {};
+            const emaW = signal.current_ema_weekly || ema;
+            const allEntries = [...Object.entries(ema), ...Object.entries(emaW)];
+            return allEntries.some(([, v]) => v.signal_type) || !!signal.hammer_signal;
         }
 
-        function selectTab(cat) {
-            _activeTab = cat;
-            buildTabs(_allSignals);
+        function signalMatchesFilter(signal) {
+            const tf = _filterTf;
+            const emaFilter = _filterEma;
+
+            // Hammer filter — независимо от таймфрейма
+            if (emaFilter === 'hammer') return !!signal.hammer_signal;
+
+            const dailyEma = signal.current_ema || {};
+            const weeklyEma = signal.current_ema_weekly || {};
+
+            function hasEmaSignal(emaObj, key) {
+                if (key === 'all') return Object.values(emaObj).some(v => v.signal_type);
+                const col = `ema_${key}`;
+                return !!(emaObj[col] && emaObj[col].signal_type);
+            }
+
+            if (tf === 'daily')  return hasEmaSignal(dailyEma, emaFilter);
+            if (tf === 'weekly') return hasEmaSignal(weeklyEma, emaFilter);
+            // 'all' — хотя бы один из таймфреймов
+            return hasEmaSignal(dailyEma, emaFilter) || hasEmaSignal(weeklyEma, emaFilter);
+        }
+
+        function setFilter(type, value) {
+            if (type === 'tf')  _filterTf  = value;
+            if (type === 'ema') _filterEma = value;
+            // Обновляем активные кнопки
+            const filtersEl = document.getElementById('signal-filters');
+            filtersEl.querySelectorAll('.filter-row').forEach((row, i) => {
+                const filterType = i === 0 ? 'tf' : 'ema';
+                const activeVal  = filterType === 'tf' ? _filterTf : _filterEma;
+                row.querySelectorAll('.tab-btn').forEach(btn => {
+                    const btnVal = btn.getAttribute('onclick').match(/'([^']+)'\)$/)[1];
+                    btn.classList.toggle('active', btnVal === activeVal);
+                });
+            });
             renderCurrentTab();
         }
 
         function renderCurrentTab() {
             const container = document.getElementById('signals-container');
-            const filtered = _activeTab === 'All'
-                ? _allSignals
-                : _allSignals.filter(s => (s.category || 'Other') === _activeTab);
+            // Показываем только акции с сигналами, затем применяем фильтр
+            const withSignals = _allSignals.filter(hasSignal);
+            const filtered = withSignals.filter(signalMatchesFilter);
 
             if (!filtered.length) {
-                container.innerHTML = '<div class="error">No signals in this category</div>';
+                container.innerHTML = '<div class="error">No signals match the selected filter</div>';
                 return;
             }
 
@@ -1048,18 +1102,12 @@
             const container = document.getElementById('signals-container');
             if (!signals || signals.length === 0) {
                 container.innerHTML = '<div class="error">No signals available</div>';
-                document.getElementById('category-tabs').style.display = 'none';
+                document.getElementById('signal-filters').style.display = 'none';
                 return;
             }
 
             _allSignals = signals;
-            // Keep active tab if it still exists in new data, else reset to All
-            const cats = signals.map(s => s.category || 'Other');
-            if (_activeTab !== 'All' && !cats.includes(_activeTab)) {
-                _activeTab = 'All';
-            }
-
-            buildTabs(signals);
+            document.getElementById('signal-filters').style.display = 'flex';
             renderCurrentTab();
         }
 
