@@ -335,10 +335,10 @@ def find_touch_events(
                 result = 'negative'
                 break
 
-            # Positive: закрылась +1% выше EMA.
+            # Positive: High достиг EMA + 1 ATR (цена отскочила на 1 ATR от уровня).
             # Если во время события LOW касался нижней EMA — позитив не считаем (неясно на что реакция).
             # Для weekly: требуем подтверждение — следующие 3 бара не должны закрыться ниже EMA−ATR.
-            if f_close >= (f_ema * (1 + rebound_pct)):
+            if f_high >= (f_ema + f_atr):
                 if touched_lower_ema_during:
                     result = None
                     break
