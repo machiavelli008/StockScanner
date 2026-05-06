@@ -140,16 +140,11 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
                 prev_emas = [float(hist[col].iloc[-i]) for i in range(2, 5)]
                 came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
 
-                if dist_pct <= 0.15:
-                    if came_from_above:
+                if came_from_above:
+                    if dist_pct <= 0.15:
                         signal_type = 'entry_zone'  # только что упала — касание
-                    elif period == 200:
-                        signal_type = 'watching'    # EMA200: подход снизу к уровню
-                elif dist_pct <= 2.0:
-                    if came_from_above:
+                    elif dist_pct <= 2.0:
                         signal_type = 'watching'    # только что упала ниже EMA
-                    elif period == 200:
-                        signal_type = 'watching'    # EMA200: подход снизу, консолидация
 
         # EMA20: только в восходящем тренде — EMA20 и EMA50 обе должны расти
         if period == 20 and signal_type is not None and len(hist) > 20:
@@ -159,6 +154,13 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             ema20_rising = ema_val > ema20_past
             ema50_rising = ema50_now > ema50_past
             if not (ema20_rising and ema50_rising):
+                signal_type = None
+
+        # EMA200: подавляем если 30 баров назад цена была ниже EMA200 (пришла снизу вверх)
+        if period == 200 and signal_type is not None and len(hist) > 31:
+            close_30_ago = float(hist['Close'].iloc[-31])
+            ema200_30_ago = float(hist[col].iloc[-31])
+            if close_30_ago < ema200_30_ago:
                 signal_type = None
 
         # EMA20: подавляем если текущая цена уже у EMA50 (цена упала слишком глубоко)
