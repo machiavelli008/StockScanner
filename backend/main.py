@@ -417,20 +417,31 @@ def find_touch_events(
 
 def detect_weekly_hammers(hist_weekly, lookback=2):
     """
-    Ищет молоты на недельном таймфрейме в последних lookback свечах.
+    Ищет молоты на недельном таймфрейме.
     Молот: нижняя тень >= 60%, тело <= 30%, верхняя тень <= 20% всей свечи.
-    Возвращает dict: {'count': int, 'dates': [str]} или None если молотов нет.
+    Зона: закрытие свечи между EMA200 и EMA20 (зона коррекции).
+    Только завершённые недельные свечи: если сегодня пн-чт — текущая неделя исключается.
     """
-    if len(hist_weekly) < lookback:
+    today_weekday = pd.Timestamp.now('UTC').weekday()  # 0=Mon … 4=Fri
+    skip_last = 1 if today_weekday < 4 else 0          # пн-чт — свеча ещё не закрыта
+
+    needed = lookback + skip_last + 1
+    if len(hist_weekly) < needed:
+        return None
+
+    start   = -(lookback + skip_last)
+    end     = -skip_last if skip_last > 0 else None
+    candles = hist_weekly.iloc[start:end]
+    if len(candles) == 0:
         return None
 
     hammers = []
-    for i in range(-lookback, 0):
+    for i in range(len(candles)):
         try:
-            o = float(hist_weekly['Open'].iloc[i])
-            h = float(hist_weekly['High'].iloc[i])
-            l = float(hist_weekly['Low'].iloc[i])
-            c = float(hist_weekly['Close'].iloc[i])
+            o = float(candles['Open'].iloc[i])
+            h = float(candles['High'].iloc[i])
+            l = float(candles['Low'].iloc[i])
+            c = float(candles['Close'].iloc[i])
         except Exception:
             continue
 
@@ -438,26 +449,27 @@ def detect_weekly_hammers(hist_weekly, lookback=2):
         if candle_range <= 0:
             continue
 
-        body = abs(c - o)
+        body         = abs(c - o)
         upper_shadow = h - max(c, o)
         lower_shadow = min(c, o) - l
 
-        body_pct        = body / candle_range
+        body_pct         = body / candle_range
         upper_shadow_pct = upper_shadow / candle_range
         lower_shadow_pct = lower_shadow / candle_range
 
         if not (lower_shadow_pct >= 0.60 and body_pct <= 0.30 and upper_shadow_pct <= 0.20):
             continue
 
-        # Молот засчитывается только если закрытие на уровне EMA20 или ниже
+        # Зона коррекции: закрытие между EMA200 и EMA20
         try:
-            ema20 = float(hist_weekly['ema_20'].iloc[i])
+            ema20  = float(candles['ema_20'].iloc[i])
+            ema200 = float(candles['ema_200'].iloc[i])
         except Exception:
             continue
-        if c > ema20:
+        if not (ema200 <= c <= ema20):
             continue
 
-        date_str = str(hist_weekly.index[i])[:10]
+        date_str = str(candles.index[i])[:10]
         hammers.append(date_str)
 
     if not hammers:
