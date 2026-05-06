@@ -412,6 +412,47 @@ def find_touch_events(
     return touches
 
 
+def detect_weekly_hammers(hist_weekly, lookback=2):
+    """
+    Ищет молоты на недельном таймфрейме в последних lookback свечах.
+    Молот: нижняя тень >= 60%, тело <= 30%, верхняя тень <= 20% всей свечи.
+    Возвращает dict: {'count': int, 'dates': [str]} или None если молотов нет.
+    """
+    if len(hist_weekly) < lookback:
+        return None
+
+    hammers = []
+    for i in range(-lookback, 0):
+        try:
+            o = float(hist_weekly['Open'].iloc[i])
+            h = float(hist_weekly['High'].iloc[i])
+            l = float(hist_weekly['Low'].iloc[i])
+            c = float(hist_weekly['Close'].iloc[i])
+        except Exception:
+            continue
+
+        candle_range = h - l
+        if candle_range <= 0:
+            continue
+
+        body = abs(c - o)
+        upper_shadow = h - max(c, o)
+        lower_shadow = min(c, o) - l
+
+        body_pct        = body / candle_range
+        upper_shadow_pct = upper_shadow / candle_range
+        lower_shadow_pct = lower_shadow / candle_range
+
+        if lower_shadow_pct >= 0.60 and body_pct <= 0.30 and upper_shadow_pct <= 0.20:
+            date_str = str(hist_weekly.index[i])[:10]
+            hammers.append(date_str)
+
+    if not hammers:
+        return None
+
+    return {'count': len(hammers), 'dates': hammers}
+
+
 def compute_rally_between_touches(touches, data, cluster_bars=20):
     """
     Группирует касания в кластеры по времени и считает ралли от первого касания
@@ -526,6 +567,8 @@ def get_stock_signals(ticker, category='Other'):
         # Weekly — то же самое
         for period in ema_periods:
             hist_weekly[f'ema_{period}'] = calculate_ema(hist_weekly['Close'], period)
+        # EMA150 только для недельного (для детектора молотов)
+        hist_weekly['ema_150'] = calculate_ema(hist_weekly['Close'], 150)
         hist_weekly = calculate_atr(hist_weekly, 14)
         hist_weekly = hist_weekly.dropna()
         hist_weekly.index = pd.to_datetime(hist_weekly.index)
@@ -574,6 +617,7 @@ def get_stock_signals(ticker, category='Other'):
             "sideways_warning": sideways_warning,
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
+            "hammer_signal": detect_weekly_hammers(hist_weekly),
             "daily": {
                 "period_1_5y": {},
                 "period_10y": {}

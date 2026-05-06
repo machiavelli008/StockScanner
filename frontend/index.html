@@ -445,6 +445,21 @@
             vertical-align: middle;
             letter-spacing: 0.02em;
         }
+        .hammer-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 0.18rem 0.55rem;
+            border-radius: 999px;
+            background: #ede9fe;
+            border: 1px solid #7c3aed;
+            color: #4c1d95;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+            letter-spacing: 0.02em;
+        }
 
         .avg-rally {
             color: #16a34a;
@@ -932,11 +947,16 @@
                 ? `<span class="sideways-badge">↔ Sideways</span>`
                 : '';
 
+            const hammer = signal.hammer_signal;
+            const hammerBadge = hammer
+                ? `<span class="hammer-badge">${hammer.count === 1 ? '🔨 1 Hammer' : `🔨 ${hammer.count} Hammers`} (Weekly)</span>`
+                : '';
+
             return `
                 <article class="${cardClass}">
                     ${topBanner}
                     <div class="ticker-header">
-                        <span class="ticker-name">${escapeHtml(signal.ticker)}${sidewaysBadge}</span>
+                        <span class="ticker-name">${escapeHtml(signal.ticker)}${sidewaysBadge}${hammerBadge}</span>
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>
                     </div>
                     ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema)}
