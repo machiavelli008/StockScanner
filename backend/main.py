@@ -443,9 +443,19 @@ def detect_weekly_hammers(hist_weekly, lookback=2):
         upper_shadow_pct = upper_shadow / candle_range
         lower_shadow_pct = lower_shadow / candle_range
 
-        if lower_shadow_pct >= 0.60 and body_pct <= 0.30 and upper_shadow_pct <= 0.20:
-            date_str = str(hist_weekly.index[i])[:10]
-            hammers.append(date_str)
+        if not (lower_shadow_pct >= 0.60 and body_pct <= 0.30 and upper_shadow_pct <= 0.20):
+            continue
+
+        # Молот засчитывается только если закрытие на уровне EMA20 или ниже
+        try:
+            ema20 = float(hist_weekly['ema_20'].iloc[i])
+        except Exception:
+            continue
+        if c > ema20:
+            continue
+
+        date_str = str(hist_weekly.index[i])[:10]
+        hammers.append(date_str)
 
     if not hammers:
         return None
