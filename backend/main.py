@@ -163,6 +163,12 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             if close_30_ago < ema200_30_ago:
                 signal_type = None
 
+        # EMA200: подавляем если EMA50 ниже EMA200 (медвежий тренд — нет золотого креста)
+        if period == 200 and signal_type is not None:
+            ema50_val = float(hist['ema_50'].iloc[-1])
+            if ema50_val < ema_val:
+                signal_type = None
+
         # EMA20: подавляем если текущая цена уже у EMA50 (цена упала слишком глубоко)
         if period == 20 and signal_type is not None:
             ema50_val = float(hist['ema_50'].iloc[-1])
