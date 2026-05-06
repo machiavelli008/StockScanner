@@ -9,6 +9,7 @@ import threading
 import time
 import os
 import io
+import json
 
 # Ленивый импорт yfinance - только когда нужен
 def get_yfinance():
@@ -756,10 +757,20 @@ def refresh_signals():
                 time.sleep(10)
     
     print(f"\n=== Analysis complete! Found {len(signals)} signals ===\n")
-    
+
+    now_str = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        SIGNALS_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(SIGNALS_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump({"last_update": now_str, "signals": signals}, f, ensure_ascii=False, default=str)
+        print(f"Saved signals.json (last_update: {now_str})")
+    except Exception as e:
+        print(f"Failed to save signals.json: {e}")
+
     with cache_lock:
         signals_cache['signals'] = signals
         signals_cache['last_update'] = pd.Timestamp.now()
+        signals_cache['data_generated_at'] = now_str
 
 
 def load_signals_from_file():
