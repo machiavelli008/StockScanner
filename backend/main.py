@@ -617,8 +617,13 @@ def get_stock_signals(ticker, category='Other'):
         print(f"Analyzing touches for {ticker}...")
 
         # Плашки считаются отдельно для дневного и недельного таймфреймов
-        current_ema_daily = compute_current_ema_signals(hist_daily, current_price, ema_periods)
-        current_ema_weekly = compute_current_ema_signals(hist_weekly, current_price, ema_periods)
+        # Если акция в боковике — EMA сигналы не показываем
+        if sideways_warning:
+            current_ema_daily = {}
+            current_ema_weekly = {}
+        else:
+            current_ema_daily = compute_current_ema_signals(hist_daily, current_price, ema_periods)
+            current_ema_weekly = compute_current_ema_signals(hist_weekly, current_price, ema_periods)
 
         result = {
             "ticker": ticker,
