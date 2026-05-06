@@ -740,19 +740,19 @@
         </section>
 
         <div id="signal-filters" class="signal-filters" style="display:none;">
-            <div class="filter-row">
+            <div class="filter-row" id="tf-ema-filters">
                 <span class="filter-label">Timeframe:</span>
                 <button class="tab-btn active" onclick="setFilter('tf','all')">All</button>
                 <button class="tab-btn" onclick="setFilter('tf','daily')">Daily</button>
                 <button class="tab-btn" onclick="setFilter('tf','weekly')">Weekly</button>
-            </div>
-            <div class="filter-row">
-                <span class="filter-label">EMA:</span>
+                <span class="filter-label" style="margin-left:1rem;">EMA:</span>
                 <button class="tab-btn active" onclick="setFilter('ema','all')">All</button>
                 <button class="tab-btn" onclick="setFilter('ema','20')">EMA 20</button>
                 <button class="tab-btn" onclick="setFilter('ema','50')">EMA 50</button>
                 <button class="tab-btn" onclick="setFilter('ema','200')">EMA 200</button>
-                <button class="tab-btn" onclick="setFilter('ema','hammer')">🔨 Hammer</button>
+            </div>
+            <div class="filter-row">
+                <button class="tab-btn" id="hammer-toggle-btn" onclick="toggleHammer()">🔨 Hammers</button>
             </div>
         </div>
 
@@ -1005,8 +1005,9 @@
 
         // Global state
         let _allSignals = [];
-        let _filterTf = 'all';   // 'all' | 'daily' | 'weekly'
-        let _filterEma = 'all';  // 'all' | '20' | '50' | '200' | 'hammer'
+        let _filterTf     = 'all';   // 'all' | 'daily' | 'weekly'
+        let _filterEma    = 'all';   // 'all' | '20' | '50' | '200'
+        let _filterHammer = false;   // независимый тоггл
 
         function getSignalPriority(signal) {
             const ema = signal.current_ema || {};
@@ -1046,13 +1047,10 @@
         }
 
         function signalMatchesFilter(signal) {
-            const tf = _filterTf;
-            const emaFilter = _filterEma;
+            // Hammer — независимый фильтр, игнорирует TF и EMA
+            if (_filterHammer) return !!signal.hammer_signal;
 
-            // Hammer filter — независимо от таймфрейма
-            if (emaFilter === 'hammer') return !!signal.hammer_signal;
-
-            const dailyEma = signal.current_ema || {};
+            const dailyEma  = signal.current_ema || {};
             const weeklyEma = signal.current_ema_weekly || {};
 
             function hasEmaSignal(emaObj, key) {
@@ -1061,24 +1059,25 @@
                 return !!(emaObj[col] && emaObj[col].signal_type);
             }
 
-            if (tf === 'daily')  return hasEmaSignal(dailyEma, emaFilter);
-            if (tf === 'weekly') return hasEmaSignal(weeklyEma, emaFilter);
-            // 'all' — хотя бы один из таймфреймов
-            return hasEmaSignal(dailyEma, emaFilter) || hasEmaSignal(weeklyEma, emaFilter);
+            if (_filterTf === 'daily')  return hasEmaSignal(dailyEma, _filterEma);
+            if (_filterTf === 'weekly') return hasEmaSignal(weeklyEma, _filterEma);
+            return hasEmaSignal(dailyEma, _filterEma) || hasEmaSignal(weeklyEma, _filterEma);
+        }
+
+        function toggleHammer() {
+            _filterHammer = !_filterHammer;
+            document.getElementById('hammer-toggle-btn').classList.toggle('active', _filterHammer);
+            renderCurrentTab();
         }
 
         function setFilter(type, value) {
             if (type === 'tf')  _filterTf  = value;
             if (type === 'ema') _filterEma = value;
-            // Обновляем активные кнопки
-            const filtersEl = document.getElementById('signal-filters');
-            filtersEl.querySelectorAll('.filter-row').forEach((row, i) => {
-                const filterType = i === 0 ? 'tf' : 'ema';
-                const activeVal  = filterType === 'tf' ? _filterTf : _filterEma;
-                row.querySelectorAll('.tab-btn').forEach(btn => {
-                    const btnVal = btn.getAttribute('onclick').match(/'([^']+)'\)$/)[1];
-                    btn.classList.toggle('active', btnVal === activeVal);
-                });
+            // Обновляем активные кнопки в строке TF+EMA
+            const row = document.getElementById('tf-ema-filters');
+            row.querySelectorAll('.tab-btn').forEach(btn => {
+                const match = btn.getAttribute('onclick').match(/'([^']+)'\)$/);
+                if (match) btn.classList.toggle('active', match[1] === value);
             });
             renderCurrentTab();
         }
