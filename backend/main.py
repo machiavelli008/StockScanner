@@ -110,6 +110,7 @@ def load_tickers():
 def compute_current_ema_signals(hist, current_price, ema_periods):
     """Считает signal_type для каждой EMA на основе текущей цены и данных таймфрейма."""
     current_atr = float(hist['atr'].iloc[-1])
+    current_low = float(hist['Low'].iloc[-1])
     ema_values = {
         f'ema_{p}': float(hist[f'ema_{p}'].iloc[-1])
         for p in ema_periods
@@ -120,6 +121,8 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
         ema_val = ema_values[col]
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
+        # Low свечи коснулся зоны EMA: тень дошла до уровня (0.15% выше или ниже EMA)
+        low_wick_touch = price_above and current_low <= ema_val * 1.0015
         signal_type = None
 
         if price_above:
@@ -128,7 +131,7 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             prev_emas = [float(hist[col].iloc[-i]) for i in range(2, 5)]
             came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
             if came_from_above:
-                if dist_pct <= 0.15:
+                if dist_pct <= 0.15 or low_wick_touch:
                     signal_type = 'entry_zone'
                 elif dist_pct <= 1.0:
                     signal_type = 'approaching'
@@ -175,11 +178,15 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
             if current_price <= ema50_val * 1.01:
                 signal_type = None
 
+        # wick_touch=True только когда сигнал пришёл именно от тени (Close был дальше 0.15%)
+        wick_touch = signal_type == 'entry_zone' and dist_pct > 0.15 and low_wick_touch
+
         result[col] = {
             'value': round(ema_val, 2),
             'distance_pct': dist_pct,
             'price_above': price_above,
             'signal_type': signal_type,
+            'wick_touch': wick_touch,
         }
     return result
 
@@ -921,6 +928,22 @@ if not os.getenv("VERCEL"):
     except Exception as e:
         print(f"⚠️  Could not mount static files: {e}")
 
+def _is_data_stale(max_age_hours=12) -> bool:
+    """Возвращает True если данные устарели или отсутствуют."""
+    with cache_lock:
+        generated_at = signals_cache.get('data_generated_at')
+    if not generated_at:
+        return True
+    try:
+        generated_ts = pd.Timestamp(generated_at)
+        if generated_ts.tzinfo is None:
+            generated_ts = generated_ts.tz_localize('UTC')
+        age_hours = (pd.Timestamp.now('UTC') - generated_ts).total_seconds() / 3600
+        return age_hours > max_age_hours
+    except Exception:
+        return True
+
+
 @app.on_event("startup")
 async def startup_event():
     """Загружаем сигналы при старте"""
@@ -928,6 +951,11 @@ async def startup_event():
     loaded = load_signals_from_file()
     if loaded:
         print("\n=== Signals loaded from file on startup ===")
+        # Если данные старше 12 часов — обновляем в фоне сразу, не ждём расписания
+        if _is_data_stale(max_age_hours=12) and ENABLE_BACKGROUND_REFRESH:
+            print("=== Data is stale (>12h) — triggering background refresh ===")
+            t = threading.Thread(target=refresh_signals, daemon=True)
+            t.start()
     elif ENABLE_STARTUP_REFRESH:
         try:
             print("\n=== Loading signals on startup via yfinance ===")
@@ -936,9 +964,10 @@ async def startup_event():
             print(f"\n⚠️  Startup refresh failed: {e}")
             print("App will fetch signals on first API call")
     else:
-        print("\n=== No signals file found, will load on first request ===")
-        if os.getenv("VERCEL"):
-            print("(Running on Vercel - startup refresh disabled to prevent timeout)")
+        print("\n=== No signals file found, triggering background refresh ===")
+        if not os.getenv("VERCEL") and ENABLE_BACKGROUND_REFRESH:
+            t = threading.Thread(target=refresh_signals, daemon=True)
+            t.start()
 
 if __name__ == "__main__":
     # Этот блок выполняется ТОЛЬКО локально, не на Vercel
