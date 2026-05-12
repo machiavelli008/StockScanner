@@ -856,6 +856,18 @@ def should_refresh_cache():
         time_since_update = pd.Timestamp.now() - signals_cache['last_update']
         return time_since_update.total_seconds() > CACHE_EXPIRY_MINUTES * 60
 
+def _sanitize(obj):
+    """Рекурсивно заменяет NaN/Inf на None для совместимости с JSON."""
+    import math
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 @app.get("/api/signals")
 def get_signals():
     """Возвращает сигналы из signals.json."""
@@ -866,11 +878,11 @@ def get_signals():
         last_update = signals_cache['last_update']
         last_update_iso = last_update.isoformat() if last_update is not None else datetime.now().isoformat()
         data_generated_at = signals_cache.get('data_generated_at')
-        return {
+        return _sanitize({
             "signals": signals_cache['signals'],
             "last_update": last_update_iso,
             "data_generated_at": data_generated_at,
-        }
+        })
 
 @app.post("/api/refresh")
 def refresh_signals_endpoint():
