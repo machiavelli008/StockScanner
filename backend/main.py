@@ -767,26 +767,43 @@ def get_stock_signals(ticker, category='Other'):
         traceback.print_exc()
         return None
 
+def _fetch_ticker(ticker, category):
+    """Скачивает и анализирует один тикер — до 3 попыток при ошибке."""
+    for attempt in range(3):
+        signal = get_stock_signals(ticker, category)
+        if signal is not None:
+            return signal
+        if attempt < 2:
+            print(f"Retrying {ticker} in 10s... (attempt {attempt + 2}/3)")
+            time.sleep(10)
+    return None
+
+
 def refresh_signals():
-    """Обновить кэш сигналов"""
+    """Обновить кэш сигналов — параллельно по 3 тикера."""
     global signals_cache
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     ticker_list = load_tickers()
     signals = []
+    signals_lock = threading.Lock()
 
-    print("\n=== Starting analysis ===")
-    for i, (ticker, category) in enumerate(ticker_list):
-        if i > 0:
-            time.sleep(3)  # пауза между тикерами чтобы не получить rate limit
-        # до 3 попыток при rate limit
-        for attempt in range(3):
-            signal = get_stock_signals(ticker, category)
-            if signal is not None:
-                signals.append(signal)
-                break
-            if attempt < 2:
-                print(f"Retrying {ticker} in 10s... (attempt {attempt + 2}/3)")
-                time.sleep(10)
+    print(f"\n=== Starting analysis ({len(ticker_list)} tickers, 3 workers) ===")
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_fetch_ticker, ticker, category): ticker
+            for ticker, category in ticker_list
+        }
+        for future in as_completed(futures):
+            ticker = futures[future]
+            try:
+                signal = future.result()
+                if signal:
+                    with signals_lock:
+                        signals.append(signal)
+            except Exception as e:
+                print(f"Error for {ticker}: {e}")
     
     print(f"\n=== Analysis complete! Found {len(signals)} signals ===\n")
 
