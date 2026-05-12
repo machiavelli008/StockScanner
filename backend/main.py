@@ -963,14 +963,197 @@ def _is_data_stale(max_age_hours=12) -> bool:
         return True
 
 
+def compute_fast_ema_signals(current_price, current_low, stored_ema):
+    """
+    Быстрая проверка сигналов по текущей цене без загрузки истории.
+    Использует сохранённые EMA уровни из последнего полного пересчёта.
+    """
+    result = {}
+    for ema_key, stored in stored_ema.items():
+        ema_val = stored.get('value')
+        if not ema_val:
+            result[ema_key] = stored
+            continue
+
+        dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
+        price_above = current_price >= ema_val
+        low_wick_touch = price_above and current_low <= ema_val * 1.0015
+
+        # Используем сохранённый price_above как признак что цена пришла сверху
+        was_above = stored.get('price_above', True)
+        signal_type = None
+
+        if was_above:
+            if price_above:
+                if dist_pct <= 0.15 or low_wick_touch:
+                    signal_type = 'entry_zone'
+                elif dist_pct <= 1.0:
+                    signal_type = 'approaching'
+            else:
+                if dist_pct <= 0.15:
+                    signal_type = 'entry_zone'
+                elif dist_pct <= 2.0:
+                    signal_type = 'watching'
+
+        result[ema_key] = {
+            'value': ema_val,
+            'distance_pct': dist_pct,
+            'price_above': price_above,
+            'signal_type': signal_type,
+            'wick_touch': signal_type == 'entry_zone' and dist_pct > 0.15 and low_wick_touch,
+        }
+    return result
+
+
+def fast_scan_signals():
+    """
+    Быстрое обновление сигналов — батч-загрузка текущих цен всех тикеров одним запросом.
+    Сравнивает с сохранёнными EMA уровнями из последнего полного пересчёта.
+    Выполняется за 45 минут до закрытия NYSE (~30 секунд для 470 тикеров).
+    """
+    with cache_lock:
+        existing = {s['ticker']: s for s in signals_cache.get('signals', [])}
+
+    if not existing:
+        print("[FAST-SCAN] No cached signals — running full refresh instead")
+        refresh_signals()
+        return
+
+    tickers = list(existing.keys())
+    print(f"[FAST-SCAN] Batch downloading prices for {len(tickers)} tickers...")
+
+    yf = get_yfinance()
+    try:
+        batch = yf.download(
+            tickers,
+            period="5d",
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+        )
+    except Exception as e:
+        print(f"[FAST-SCAN] Batch download failed: {e}")
+        return
+
+    updated = []
+    for ticker, signal in existing.items():
+        try:
+            if isinstance(batch.columns, pd.MultiIndex):
+                ticker_data = batch.xs(ticker, level=1, axis=1).dropna()
+            else:
+                ticker_data = batch.dropna()
+
+            if ticker_data.empty:
+                updated.append(signal)
+                continue
+
+            cur_price = float(ticker_data['Close'].iloc[-1])
+            cur_low   = float(ticker_data['Low'].iloc[-1])
+
+            new_signal = dict(signal)
+            new_signal['current_price'] = round(cur_price, 2)
+
+            if signal.get('current_ema'):
+                new_signal['current_ema'] = compute_fast_ema_signals(
+                    cur_price, cur_low, signal['current_ema']
+                )
+            if signal.get('current_ema_weekly'):
+                new_signal['current_ema_weekly'] = compute_fast_ema_signals(
+                    cur_price, cur_low, signal['current_ema_weekly']
+                )
+
+            updated.append(new_signal)
+        except Exception as e:
+            print(f"[FAST-SCAN] Error for {ticker}: {e}")
+            updated.append(signal)
+
+    now_str = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+    with cache_lock:
+        signals_cache['signals'] = updated
+        signals_cache['last_update'] = pd.Timestamp.now()
+        signals_cache['data_generated_at'] = now_str
+
+    try:
+        SIGNALS_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(SIGNALS_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'last_update': now_str, 'signals': updated}, f, ensure_ascii=False, default=str)
+    except Exception as e:
+        print(f"[FAST-SCAN] Failed to save: {e}")
+
+    print(f"[FAST-SCAN] Done! {len(updated)} signals updated")
+
+
+def auto_refresh_background():
+    """
+    Расписание (ET, торговые дни Пн-Пт):
+      15:15 ET — fast_scan_signals()  : текущие цены, ~30 сек, клиент видит сигналы
+      16:30 ET — refresh_signals()    : полный пересчёт с историей после закрытия свечи
+    """
+    import zoneinfo
+    global background_thread_stop
+
+    et_tz = zoneinfo.ZoneInfo("America/New_York")
+    print("[AUTO-REFRESH] Started. Schedule: fast scan 15:15 ET, full rebuild 16:30 ET (Mon-Fri)")
+
+    while not background_thread_stop:
+        try:
+            now_et = pd.Timestamp.now(et_tz)
+            today  = now_et.normalize().tz_localize(None)
+            today_et = pd.Timestamp(today).tz_localize(et_tz)
+
+            # Расписание на сегодня
+            fast_scan_et  = today_et + pd.Timedelta(hours=15, minutes=15)
+            full_build_et = today_et + pd.Timedelta(hours=16, minutes=30)
+
+            # Выбираем ближайшее будущее событие
+            candidates = []
+            if now_et < fast_scan_et:
+                candidates.append(('fast_scan',  fast_scan_et))
+            if now_et < full_build_et:
+                candidates.append(('full_build', full_build_et))
+
+            if not candidates:
+                # Оба события сегодня прошли — переходим к следующему торговому дню
+                next_day = today_et + pd.Timedelta(days=1)
+                while next_day.dayofweek >= 5:
+                    next_day += pd.Timedelta(days=1)
+                candidates.append(('fast_scan', next_day + pd.Timedelta(hours=15, minutes=15)))
+
+            kind, run_at = candidates[0]
+
+            # Пропускаем выходные
+            while run_at.dayofweek >= 5:
+                run_at += pd.Timedelta(days=1)
+
+            wait_seconds = (run_at - now_et).total_seconds()
+            print(f"[AUTO-REFRESH] Next: {kind} at {run_at.strftime('%Y-%m-%d %H:%M ET')} "
+                  f"(in {int(wait_seconds/3600)}h {int((wait_seconds % 3600)/60)}m)")
+
+            time.sleep(wait_seconds)
+
+            if background_thread_stop:
+                break
+
+            if kind == 'fast_scan':
+                print(f"[AUTO-REFRESH] Starting fast scan at {pd.Timestamp.now()}")
+                fast_scan_signals()
+                print(f"[AUTO-REFRESH] Fast scan completed at {pd.Timestamp.now()}")
+            else:
+                print(f"[AUTO-REFRESH] Starting full rebuild at {pd.Timestamp.now()}")
+                refresh_signals()
+                print(f"[AUTO-REFRESH] Full rebuild completed at {pd.Timestamp.now()}")
+
+        except Exception as e:
+            print(f"[AUTO-REFRESH] Error: {e}")
+            time.sleep(60)
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Загружаем сигналы при старте"""
-    # Всегда пробуем загрузить из файла (быстро, без сети)
+    """Загружаем сигналы при старте и запускаем фоновое расписание."""
     loaded = load_signals_from_file()
     if loaded:
         print("\n=== Signals loaded from file on startup ===")
-        # Если данные старше 12 часов — обновляем в фоне сразу, не ждём расписания
         if _is_data_stale(max_age_hours=12) and ENABLE_BACKGROUND_REFRESH:
             print("=== Data is stale (>12h) — triggering background refresh ===")
             t = threading.Thread(target=refresh_signals, daemon=True)
@@ -981,69 +1164,26 @@ async def startup_event():
             refresh_signals()
         except Exception as e:
             print(f"\n⚠️  Startup refresh failed: {e}")
-            print("App will fetch signals on first API call")
     else:
         print("\n=== No signals file found, triggering background refresh ===")
         if not os.getenv("VERCEL") and ENABLE_BACKGROUND_REFRESH:
             t = threading.Thread(target=refresh_signals, daemon=True)
             t.start()
 
+    # Запускаем фоновое расписание — работает на Railway и локально
+    if ENABLE_BACKGROUND_REFRESH and not os.getenv("VERCEL"):
+        bg = threading.Thread(target=auto_refresh_background, daemon=True)
+        bg.start()
+        print("=== Auto-refresh scheduler started (15:15 fast scan + 16:30 full rebuild ET) ===")
+
+
 if __name__ == "__main__":
-    # Этот блок выполняется ТОЛЬКО локально, не на Vercel
     import uvicorn
-    
-    def auto_refresh_background():
-        """
-        Пн-Чт: за 45 мин до закрытия NYSE.
-        Пт: за 1 час до закрытия NYSE (покрывает дневные и недельные свечи).
-        Летнее время США (EDT, UTC-4): Пн-Чт 19:15 UTC, Пт 19:00 UTC.
-        Зимнее время США (EST, UTC-5): Пн-Чт 20:15 UTC, Пт 20:00 UTC.
-        """
-        import zoneinfo
-        global background_thread_stop
-        print("[AUTO-REFRESH] Started. Summer: Mon-Thu 19:15 UTC / Fri 19:00 UTC. Winter: Mon-Thu 20:15 UTC / Fri 20:00 UTC.")
 
-        et_tz = zoneinfo.ZoneInfo("America/New_York")
-
-        while not background_thread_stop:
-            try:
-                now_utc = pd.Timestamp.now('UTC')
-                now_et = now_utc.tz_convert(et_tz)
-                # Определяем смещение ET от UTC (-4 летом, -5 зимой)
-                et_offset = now_et.utcoffset().total_seconds() / 3600  # -4 или -5
-                is_friday = now_utc.dayofweek == 4
-                # NYSE закрывается в 16:00 ET = 20:00 UTC (зима) или 19:00 UTC (лето)
-                # Пн-Чт: за 45 мин до закрытия; Пт: за 1 час до закрытия
-                close_utc_hour = 16 + abs(int(et_offset))  # 20 зимой, 19 летом
-                refresh_minute = 0 if is_friday else 15
-                refresh_utc_hour = close_utc_hour - 1 if is_friday else close_utc_hour
-                next_run = now_utc.normalize() + pd.Timedelta(hours=refresh_utc_hour, minutes=refresh_minute)
-                if next_run <= now_utc:
-                    next_run += pd.Timedelta(days=1)
-                while next_run.dayofweek >= 5:  # пропускаем выходные
-                    next_run += pd.Timedelta(days=1)
-                wait_seconds = (next_run - now_utc).total_seconds()
-                print(f"[AUTO-REFRESH] Next: {next_run.strftime('%Y-%m-%d %H:%M UTC')} (in {int(wait_seconds/3600)}h {int((wait_seconds%3600)/60)}m)")
-                time.sleep(wait_seconds)
-                if not background_thread_stop:
-                    print(f"[AUTO-REFRESH] Starting refresh at {pd.Timestamp.now()}")
-                    refresh_signals()
-                    print(f"[AUTO-REFRESH] Completed at {pd.Timestamp.now()}")
-            except Exception as e:
-                print(f"[AUTO-REFRESH] Error during automatic refresh: {e}")
-    
-    if ENABLE_BACKGROUND_REFRESH:
-        # Запускаем фоновый поток обновления
-        bg_thread = threading.Thread(target=auto_refresh_background, daemon=True)
-        bg_thread.start()
-    else:
-        print("[AUTO-REFRESH] Background updater disabled by ENABLE_BACKGROUND_REFRESH")
-    
     print("\n" + "="*50)
-    print("🚀 StockScanner Backend Starting...")
-    print("📊 Data auto-refresh: Summer Mon-Thu 19:15/Fri 19:00 UTC | Winter Mon-Thu 20:15/Fri 20:00 UTC")
-    print(f"🌐 API: http://127.0.0.1:{SERVER_PORT}")
-    print(f"📄 Docs: http://127.0.0.1:{SERVER_PORT}/docs")
+    print("StockScanner Backend Starting...")
+    print("Auto-refresh: fast scan 15:15 ET + full rebuild 16:30 ET (Mon-Fri)")
+    print(f"API: http://127.0.0.1:{SERVER_PORT}")
     print("="*50 + "\n")
 
     try:
@@ -1051,7 +1191,7 @@ if __name__ == "__main__":
     except OSError as e:
         if "10048" in str(e) or "Address already in use" in str(e):
             fallback_port = SERVER_PORT + 1
-            print(f"\n⚠️  Port {SERVER_PORT} already in use. Trying port {fallback_port}...")
+            print(f"Port {SERVER_PORT} already in use. Trying port {fallback_port}...")
             uvicorn.run(app, host="127.0.0.1", port=fallback_port)
         else:
             raise
