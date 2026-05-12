@@ -49,6 +49,8 @@ def normalize_ohlc_columns(df):
             df.columns = df.columns.get_level_values('Price')
         else:
             df.columns = df.columns.get_level_values(0)
+    # При параллельных загрузках yfinance может вернуть дублирующиеся колонки
+    df = df.loc[:, ~df.columns.duplicated()]
     return df
 
 
