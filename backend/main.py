@@ -790,22 +790,14 @@ def refresh_signals():
     signals = []
     signals_lock = threading.Lock()
 
-    print(f"\n=== Starting analysis ({len(ticker_list)} tickers, 3 workers) ===")
+    print(f"\n=== Starting analysis ({len(ticker_list)} tickers, sequential) ===")
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {
-            executor.submit(_fetch_ticker, ticker, category): ticker
-            for ticker, category in ticker_list
-        }
-        for future in as_completed(futures):
-            ticker = futures[future]
-            try:
-                signal = future.result()
-                if signal:
-                    with signals_lock:
-                        signals.append(signal)
-            except Exception as e:
-                print(f"Error for {ticker}: {e}")
+    for i, (ticker, category) in enumerate(ticker_list):
+        if i > 0:
+            time.sleep(1)
+        signal = _fetch_ticker(ticker, category)
+        if signal:
+            signals.append(signal)
     
     print(f"\n=== Analysis complete! Found {len(signals)} signals ===\n")
 
