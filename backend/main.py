@@ -118,16 +118,12 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
         for p in ema_periods
     }
 
-    # Пороги касания шире для weekly (недельная свеча — 2-5% диапазон)
-    entry_pct = 1.0 if is_weekly else 0.5
-    wick_pct  = 1.0 if is_weekly else 0.5
-
-    # Максимальное расстояние выше EMA при котором сигнал ещё актуален.
-    # EMA20: особая логика — через EMA10.
-    # EMA50:  1.5%  (короткая MA, быстро снимаем)
-    # EMA100: 2.5%  (промежуточная)
-    # EMA200: 4.5%  (главная поддержка, широкая зона)
-    EMA_MAX_ABOVE = {50: 1.5, 100: 2.5, 200: 4.5}
+    # Пороги по таймфреймам:
+    # Weekly: вход ≤ 2%, approaching 2–4%
+    # Daily:  вход ≤ 1%, approaching 1–2%
+    entry_pct   = 2.0 if is_weekly else 1.0
+    wick_pct    = 2.0 if is_weekly else 1.0
+    approach_pct = 4.0 if is_weekly else 2.0
 
     # EMA10 нужна только для логики EMA20: верхняя граница зоны входа
     ema10_val = float(hist['ema_10'].iloc[-1]) if 'ema_10' in hist.columns else None
@@ -160,9 +156,7 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
         else:
-            max_above = EMA_MAX_ABOVE.get(period, 2.0)
-
-            if price_above and came_from_above and dist_pct <= max_above:
+            if price_above and came_from_above and dist_pct <= approach_pct:
                 if dist_pct <= entry_pct or low_wick_touch:
                     signal_type = 'entry_zone'
                 else:
@@ -181,7 +175,7 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                 if not touches_lower:
                     if dist_pct <= entry_pct:
                         signal_type = 'entry_zone'
-                    elif dist_pct <= max_above:
+                    elif dist_pct <= approach_pct:
                         signal_type = 'watching'
 
         # EMA20: только в восходящем тренде — EMA20 и EMA50 обе должны расти
@@ -1006,9 +1000,9 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
     Быстрая проверка сигналов по текущей цене без загрузки истории.
     Использует сохранённые EMA уровни из последнего полного пересчёта.
     """
-    entry_pct = 1.0 if is_weekly else 0.5
-    wick_pct  = 1.0 if is_weekly else 0.5
-    EMA_MAX_ABOVE = {50: 1.5, 100: 2.5, 200: 4.5}
+    entry_pct    = 2.0 if is_weekly else 1.0
+    wick_pct     = 2.0 if is_weekly else 1.0
+    approach_pct = 4.0 if is_weekly else 2.0
 
     result = {}
     for ema_key, stored in stored_ema.items():
@@ -1042,9 +1036,8 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
         else:
-            max_above = EMA_MAX_ABOVE.get(period, 2.0)
             if was_above:
-                if price_above and dist_pct <= max_above:
+                if price_above and dist_pct <= approach_pct:
                     if dist_pct <= entry_pct or low_wick_touch:
                         signal_type = 'entry_zone'
                     else:
@@ -1052,7 +1045,7 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
                         price_declining = prev_price is None or current_price <= prev_price
                         if price_declining:
                             signal_type = 'approaching'
-                elif not price_above and dist_pct <= max_above:
+                elif not price_above and dist_pct <= approach_pct:
                     if dist_pct <= entry_pct:
                         signal_type = 'entry_zone'
                     else:
