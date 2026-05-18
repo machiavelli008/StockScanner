@@ -109,7 +109,7 @@ def load_tickers():
         print(f"Failed to load tickers.csv: {e}. Using default tickers.")
         return [(t, 'Other') for t in DEFAULT_TICKERS]
 
-def compute_current_ema_signals(hist, current_price, ema_periods):
+def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=False):
     """Считает signal_type для каждой EMA на основе текущей цены и данных таймфрейма."""
     current_atr = float(hist['atr'].iloc[-1])
     current_low = float(hist['Low'].iloc[-1])
@@ -117,74 +117,101 @@ def compute_current_ema_signals(hist, current_price, ema_periods):
         f'ema_{p}': float(hist[f'ema_{p}'].iloc[-1])
         for p in ema_periods
     }
+
+    # Пороги касания шире для weekly (недельная свеча — 2-5% диапазон)
+    entry_pct = 1.0 if is_weekly else 0.5
+    wick_pct  = 1.0 if is_weekly else 0.5
+
+    # Максимальное расстояние выше EMA при котором сигнал ещё актуален.
+    # EMA20: особая логика — через EMA10.
+    # EMA50:  1.5%  (короткая MA, быстро снимаем)
+    # EMA100: 2.5%  (промежуточная)
+    # EMA200: 4.5%  (главная поддержка, широкая зона)
+    EMA_MAX_ABOVE = {50: 1.5, 100: 2.5, 200: 4.5}
+
+    # EMA10 нужна только для логики EMA20: верхняя граница зоны входа
+    ema10_val = float(hist['ema_10'].iloc[-1]) if 'ema_10' in hist.columns else None
+
     result = {}
     for period in ema_periods:
         col = f'ema_{period}'
         ema_val = ema_values[col]
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
-        # Low свечи коснулся зоны EMA: тень дошла до уровня (0.15% выше или ниже EMA)
-        low_wick_touch = price_above and current_low <= ema_val * 1.0015
+        low_wick_touch = price_above and current_low <= ema_val * (1 + wick_pct / 100)
         signal_type = None
 
-        if price_above:
-            # Проверяем что последние 3 свечи тоже были выше EMA (цена снижается сверху вниз)
-            prev_closes = [float(hist['Close'].iloc[-i]) for i in range(2, 5)]
-            prev_emas = [float(hist[col].iloc[-i]) for i in range(2, 5)]
-            came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
-            if came_from_above:
-                if dist_pct <= 0.15 or low_wick_touch:
-                    signal_type = 'entry_zone'
-                elif dist_pct <= 1.0:
-                    signal_type = 'approaching'
-        else:
-            lower_emas = [v for k, v in ema_values.items() if v < ema_val]
-            touches_lower = any(current_price <= lv for lv in lower_emas)
-            if not touches_lower:
-                prev_closes = [float(hist['Close'].iloc[-i]) for i in range(2, 5)]
-                prev_emas = [float(hist[col].iloc[-i]) for i in range(2, 5)]
-                came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
+        prev_closes = [float(hist['Close'].iloc[-i]) for i in range(2, 5)]
+        prev_emas   = [float(hist[col].iloc[-i])     for i in range(2, 5)]
+        came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
 
-                if came_from_above:
-                    if dist_pct <= 0.15:
-                        signal_type = 'entry_zone'  # только что упала — касание
-                    elif dist_pct <= 2.0:
-                        signal_type = 'watching'    # только что упала ниже EMA
+        if period == 20 and ema10_val:
+            # EMA20: зона входа = от EMA20 до EMA10+1%.
+            # Цена внутри этой зоны (пуллбэк или отскок) → Ready to Buy.
+            # Выше EMA10+1% → сигнал снимается (сетап отыгран).
+            if price_above and came_from_above:
+                in_ema20_touch  = dist_pct <= entry_pct or low_wick_touch
+                in_bounce_zone  = current_price <= ema10_val * 1.01
+                if in_ema20_touch or in_bounce_zone:
+                    signal_type = 'entry_zone'
+            elif not price_above and came_from_above:
+                if dist_pct <= entry_pct:
+                    signal_type = 'entry_zone'
+                elif dist_pct <= 2.0:
+                    signal_type = 'watching'
+        else:
+            max_above = EMA_MAX_ABOVE.get(period, 2.0)
+
+            if price_above and came_from_above and dist_pct <= max_above:
+                if dist_pct <= entry_pct or low_wick_touch:
+                    signal_type = 'entry_zone'
+                else:
+                    # Approaching только если цена ПАДАЕТ к EMA (не отскакивает вверх)
+                    lookback = 2 if is_weekly else 1
+                    if len(hist) > lookback + 1:
+                        prev_close = float(hist['Close'].iloc[-(lookback + 1)])
+                        price_declining = current_price < prev_close
+                    else:
+                        price_declining = True
+                    if price_declining:
+                        signal_type = 'approaching'
+            elif not price_above and came_from_above:
+                lower_emas = [v for k, v in ema_values.items() if v < ema_val]
+                touches_lower = any(current_price <= lv for lv in lower_emas)
+                if not touches_lower:
+                    if dist_pct <= entry_pct:
+                        signal_type = 'entry_zone'
+                    elif dist_pct <= max_above:
+                        signal_type = 'watching'
 
         # EMA20: только в восходящем тренде — EMA20 и EMA50 обе должны расти
         if period == 20 and signal_type is not None and len(hist) > 20:
             ema20_past = float(hist[col].iloc[-21])
-            ema50_now = float(hist['ema_50'].iloc[-1])
+            ema50_now  = float(hist['ema_50'].iloc[-1])
             ema50_past = float(hist['ema_50'].iloc[-21])
-            ema20_rising = ema_val > ema20_past
-            ema50_rising = ema50_now > ema50_past
-            if not (ema20_rising and ema50_rising):
+            if not (ema_val > ema20_past and ema50_now > ema50_past):
                 signal_type = None
 
-        # EMA200: подавляем если 30 баров назад цена была ниже EMA200 (пришла снизу вверх)
+        # EMA200: подавляем если 30 баров назад цена была ниже EMA200
         if period == 200 and signal_type is not None and len(hist) > 31:
-            close_30_ago = float(hist['Close'].iloc[-31])
-            ema200_30_ago = float(hist[col].iloc[-31])
-            if close_30_ago < ema200_30_ago:
+            if float(hist['Close'].iloc[-31]) < float(hist[col].iloc[-31]):
                 signal_type = None
 
-        # EMA200: подавляем если EMA50 ниже EMA200 (медвежий тренд — нет золотого креста)
+        # EMA200: подавляем при медвежьем тренде (EMA50 < EMA200)
         if period == 200 and signal_type is not None:
-            ema50_val = float(hist['ema_50'].iloc[-1])
-            if ema50_val < ema_val:
+            if float(hist['ema_50'].iloc[-1]) < ema_val:
                 signal_type = None
 
-        # EMA20: подавляем если текущая цена уже у EMA50 (цена упала слишком глубоко)
+        # EMA20: подавляем если цена упала слишком глубоко (уже у EMA50)
         if period == 20 and signal_type is not None:
-            ema50_val = float(hist['ema_50'].iloc[-1])
-            if current_price <= ema50_val * 1.01:
+            if current_price <= float(hist['ema_50'].iloc[-1]) * 1.01:
                 signal_type = None
 
-        # wick_touch=True только когда сигнал пришёл именно от тени (Close был дальше 0.15%)
-        wick_touch = signal_type == 'entry_zone' and dist_pct > 0.15 and low_wick_touch
+        wick_touch = signal_type == 'entry_zone' and dist_pct > entry_pct and low_wick_touch
 
         result[col] = {
             'value': round(ema_val, 2),
+            'atr': round(current_atr, 2),
             'distance_pct': dist_pct,
             'price_above': price_above,
             'signal_type': signal_type,
@@ -598,6 +625,8 @@ def get_stock_signals(ticker, category='Other'):
         # Daily — EMA считаем на 15 годах, потом обрезаем до последних 10 для анализа
         for period in ema_periods:
             hist_daily[f'ema_{period}'] = calculate_ema(hist_daily['Close'], period)
+        # EMA10 — граница зоны EMA20 (не отдельный сигнал, только для EMA20 логики)
+        hist_daily['ema_10'] = calculate_ema(hist_daily['Close'], 10)
         hist_daily = calculate_atr(hist_daily, 14)
         hist_daily = hist_daily.dropna()
         hist_daily.index = pd.to_datetime(hist_daily.index)
@@ -607,6 +636,7 @@ def get_stock_signals(ticker, category='Other'):
         # Weekly — то же самое
         for period in ema_periods:
             hist_weekly[f'ema_{period}'] = calculate_ema(hist_weekly['Close'], period)
+        hist_weekly['ema_10']  = calculate_ema(hist_weekly['Close'], 10)
         # EMA150 только для недельного (для детектора молотов)
         hist_weekly['ema_150'] = calculate_ema(hist_weekly['Close'], 150)
         hist_weekly = calculate_atr(hist_weekly, 14)
@@ -651,8 +681,8 @@ def get_stock_signals(ticker, category='Other'):
             current_ema_daily = {}
             current_ema_weekly = {}
         else:
-            current_ema_daily = compute_current_ema_signals(hist_daily, current_price, ema_periods)
-            current_ema_weekly = compute_current_ema_signals(hist_weekly, current_price, ema_periods)
+            current_ema_daily   = compute_current_ema_signals(hist_daily,   current_price, ema_periods, is_weekly=False)
+            current_ema_weekly  = compute_current_ema_signals(hist_weekly,  current_price, ema_periods, is_weekly=True)
 
         result = {
             "ticker": ticker,
@@ -662,6 +692,9 @@ def get_stock_signals(ticker, category='Other'):
             "sideways_warning": sideways_warning,
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
+            # EMA10 хранится для fast_scan (верхняя граница зоны EMA20)
+            "ema10_daily":   round(float(hist_daily['ema_10'].iloc[-1]),   2),
+            "ema10_weekly":  round(float(hist_weekly['ema_10'].iloc[-1]),  2),
             "hammer_signal": detect_weekly_hammers(hist_weekly),
             "daily": {
                 "period_1_5y": {},
@@ -967,11 +1000,16 @@ def _is_data_stale(max_age_hours=12) -> bool:
         return True
 
 
-def compute_fast_ema_signals(current_price, current_low, stored_ema):
+def compute_fast_ema_signals(current_price, current_low, stored_ema,
+                             is_weekly=False, prev_price=None, ema10=None):
     """
     Быстрая проверка сигналов по текущей цене без загрузки истории.
     Использует сохранённые EMA уровни из последнего полного пересчёта.
     """
+    entry_pct = 1.0 if is_weekly else 0.5
+    wick_pct  = 1.0 if is_weekly else 0.5
+    EMA_MAX_ABOVE = {50: 1.5, 100: 2.5, 200: 4.5}
+
     result = {}
     for ema_key, stored in stored_ema.items():
         ema_val = stored.get('value')
@@ -979,32 +1017,54 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema):
             result[ema_key] = stored
             continue
 
+        try:
+            period = int(ema_key.replace('ema_', ''))
+        except ValueError:
+            result[ema_key] = stored
+            continue
+
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
-        low_wick_touch = price_above and current_low <= ema_val * 1.0015
-
-        # Используем сохранённый price_above как признак что цена пришла сверху
+        low_wick_touch = price_above and current_low <= ema_val * (1 + wick_pct / 100)
         was_above = stored.get('price_above', True)
         signal_type = None
 
-        if was_above:
-            if price_above:
-                if dist_pct <= 0.15 or low_wick_touch:
+        if period == 20 and ema10 is not None:
+            # EMA20: зона входа = EMA20 → EMA10+1%
+            if was_above and price_above:
+                in_ema20_touch = dist_pct <= entry_pct or low_wick_touch
+                in_bounce_zone = current_price <= ema10 * 1.01
+                if in_ema20_touch or in_bounce_zone:
                     signal_type = 'entry_zone'
-                elif dist_pct <= 1.0:
-                    signal_type = 'approaching'
-            else:
-                if dist_pct <= 0.15:
+            elif was_above and not price_above:
+                if dist_pct <= entry_pct:
                     signal_type = 'entry_zone'
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
+        else:
+            max_above = EMA_MAX_ABOVE.get(period, 2.0)
+            if was_above:
+                if price_above and dist_pct <= max_above:
+                    if dist_pct <= entry_pct or low_wick_touch:
+                        signal_type = 'entry_zone'
+                    else:
+                        # Approaching только когда цена падает к EMA (не растёт)
+                        price_declining = prev_price is None or current_price <= prev_price
+                        if price_declining:
+                            signal_type = 'approaching'
+                elif not price_above and dist_pct <= max_above:
+                    if dist_pct <= entry_pct:
+                        signal_type = 'entry_zone'
+                    else:
+                        signal_type = 'watching'
 
         result[ema_key] = {
             'value': ema_val,
+            'atr': stored.get('atr'),
             'distance_pct': dist_pct,
             'price_above': price_above,
             'signal_type': signal_type,
-            'wick_touch': signal_type == 'entry_zone' and dist_pct > 0.15 and low_wick_touch,
+            'wick_touch': signal_type == 'entry_zone' and dist_pct > entry_pct and low_wick_touch,
         }
     return result
 
@@ -1051,19 +1111,25 @@ def fast_scan_signals():
                 updated.append(signal)
                 continue
 
-            cur_price = float(ticker_data['Close'].iloc[-1])
-            cur_low   = float(ticker_data['Low'].iloc[-1])
+            cur_price  = float(ticker_data['Close'].iloc[-1])
+            cur_low    = float(ticker_data['Low'].iloc[-1])
+            prev_price = float(ticker_data['Close'].iloc[-2]) if len(ticker_data) >= 2 else None
+
+            ema10_daily   = signal.get('ema10_daily')
+            ema10_weekly  = signal.get('ema10_weekly')
 
             new_signal = dict(signal)
             new_signal['current_price'] = round(cur_price, 2)
 
             if signal.get('current_ema'):
                 new_signal['current_ema'] = compute_fast_ema_signals(
-                    cur_price, cur_low, signal['current_ema']
+                    cur_price, cur_low, signal['current_ema'],
+                    is_weekly=False, prev_price=prev_price, ema10=ema10_daily
                 )
             if signal.get('current_ema_weekly'):
                 new_signal['current_ema_weekly'] = compute_fast_ema_signals(
-                    cur_price, cur_low, signal['current_ema_weekly']
+                    cur_price, cur_low, signal['current_ema_weekly'],
+                    is_weekly=True, prev_price=prev_price, ema10=ema10_weekly
                 )
 
             updated.append(new_signal)
