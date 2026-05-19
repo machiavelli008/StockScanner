@@ -907,8 +907,8 @@ def get_signals():
 
 @app.post("/api/refresh")
 def refresh_signals_endpoint():
-    """Запускает пересчёт сигналов в фоне и сразу возвращает ответ."""
-    thread = threading.Thread(target=refresh_signals, daemon=True)
+    """Запускает инкрементальное обновление EMA в фоне и сразу возвращает ответ."""
+    thread = threading.Thread(target=incremental_update, daemon=True)
     thread.start()
     return {"status": "started"}
 
