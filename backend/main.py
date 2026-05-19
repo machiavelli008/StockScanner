@@ -687,8 +687,10 @@ def get_stock_signals(ticker, category='Other'):
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
             # EMA10 хранится для fast_scan (верхняя граница зоны EMA20)
-            "ema10_daily":   round(float(hist_daily['ema_10'].iloc[-1]),   2),
-            "ema10_weekly":  round(float(hist_weekly['ema_10'].iloc[-1]),  2),
+            "ema10_daily":    round(float(hist_daily['ema_10'].iloc[-1]),  2),
+            "ema10_weekly":   round(float(hist_weekly['ema_10'].iloc[-1]), 2),
+            "last_daily_date":  str(hist_daily.index[-1])[:10],
+            "last_weekly_date": str(hist_weekly.index[-1])[:10],
             "hammer_signal": detect_weekly_hammers(hist_weekly),
             "daily": {
                 "period_1_5y": {},
@@ -1146,53 +1148,247 @@ def fast_scan_signals():
     print(f"[FAST-SCAN] Done! {len(updated)} signals updated")
 
 
+def _apply_ema_incremental(new_bars, stored_ema, stored_ema10, ema_periods, last_date, is_weekly=False):
+    """
+    Обновляет EMA по формуле EMA(t) = α*Close + (1-α)*EMA(t-1) только для новых баров.
+    Возвращает (updated_stored_ema, updated_ema10) или (None, stored_ema10) при ошибке.
+    """
+    if new_bars.empty or not stored_ema:
+        return None, stored_ema10
+
+    new_bars = new_bars.copy()
+    new_bars.index = pd.to_datetime(new_bars.index)
+
+    # Только бары новее last_date
+    if last_date:
+        try:
+            last_ts = pd.Timestamp(last_date).date()
+            bars_to_apply = new_bars[new_bars.index.date > last_ts]
+        except Exception:
+            bars_to_apply = new_bars.iloc[-2:]
+    else:
+        bars_to_apply = new_bars  # первый запуск — берём все доступные
+
+    # Извлекаем сохранённые EMA значения
+    ema_vals = {}
+    for ema_key, data in stored_ema.items():
+        try:
+            period = int(ema_key.replace('ema_', ''))
+            val = data.get('value')
+            if val:
+                ema_vals[period] = float(val)
+        except (ValueError, TypeError):
+            pass
+
+    ema10_val = float(stored_ema10) if stored_ema10 else None
+
+    # Применяем формулу для каждого нового бара
+    if not bars_to_apply.empty:
+        for i in range(len(bars_to_apply)):
+            try:
+                close = float(bars_to_apply['Close'].iloc[i])
+            except Exception:
+                continue
+            for period in ema_periods:
+                if period in ema_vals:
+                    alpha = 2.0 / (period + 1)
+                    ema_vals[period] = alpha * close + (1 - alpha) * ema_vals[period]
+            if ema10_val is not None:
+                ema10_val = (2.0 / 11) * close + (9.0 / 11) * ema10_val
+
+    current_price = float(new_bars['Close'].iloc[-1])
+    current_low   = float(new_bars['Low'].iloc[-1])
+    prev_price    = float(new_bars['Close'].iloc[-2]) if len(new_bars) >= 2 else None
+
+    # Сохраняем старый price_above как was_above для следующего цикла
+    ema_for_signal = {}
+    for ema_key, data in stored_ema.items():
+        try:
+            period = int(ema_key.replace('ema_', ''))
+        except ValueError:
+            ema_for_signal[ema_key] = data
+            continue
+        new_val = ema_vals.get(period)
+        if new_val is None:
+            ema_for_signal[ema_key] = data
+            continue
+        ema_for_signal[ema_key] = {
+            'value':        round(new_val, 4),
+            'atr':          data.get('atr'),
+            'price_above':  data.get('price_above', True),  # was_above для следующего вызова
+            'distance_pct': round(abs(current_price - new_val) / new_val * 100, 2),
+            'signal_type':  data.get('signal_type'),
+            'wick_touch':   data.get('wick_touch', False),
+        }
+
+    result = compute_fast_ema_signals(
+        current_price, current_low, ema_for_signal,
+        is_weekly=is_weekly, prev_price=prev_price, ema10=ema10_val,
+    )
+    return result, (round(ema10_val, 4) if ema10_val else None)
+
+
+def incremental_update():
+    """
+    Инкрементальное обновление: скачиваем только последние 10 дней батчем (~5 сек),
+    обновляем EMA по формуле. Запускается ежедневно в 16:30 ET (Mon-Fri).
+    Полный пересчёт (refresh_signals) — только по воскресеньям для калибровки.
+    """
+    import time as _time
+    start = _time.time()
+
+    with cache_lock:
+        existing = {s['ticker']: s for s in signals_cache.get('signals', [])}
+
+    if not existing:
+        print("[INCREMENTAL] No cached signals — running full refresh")
+        refresh_signals()
+        return
+
+    all_tickers    = load_tickers()
+    new_tickers    = [(t, c) for t, c in all_tickers if t not in existing]
+    tickers        = list(existing.keys())
+    ema_periods    = [20, 50, 100, 200]
+    yf             = get_yfinance()
+
+    print(f"[INCREMENTAL] Batch downloading {len(tickers)} tickers (10d daily + 1mo weekly)...")
+    try:
+        batch_daily  = yf.download(tickers, period="10d", interval="1d",  progress=False, auto_adjust=False)
+        batch_weekly = yf.download(tickers, period="1mo", interval="1wk", progress=False, auto_adjust=False)
+    except Exception as e:
+        print(f"[INCREMENTAL] Download failed: {e}")
+        return
+
+    updated = []
+    for ticker, signal in existing.items():
+        try:
+            if isinstance(batch_daily.columns, pd.MultiIndex):
+                daily_new  = batch_daily.xs(ticker,  level=1, axis=1).dropna()
+                weekly_new = batch_weekly.xs(ticker, level=1, axis=1).dropna()
+            else:
+                daily_new  = batch_daily.dropna()
+                weekly_new = batch_weekly.dropna()
+
+            if daily_new.empty:
+                updated.append(signal)
+                continue
+
+            new_signal = dict(signal)
+            new_signal['current_price'] = round(float(daily_new['Close'].iloc[-1]), 2)
+
+            if signal.get('current_ema'):
+                new_ema_d, new_ema10_d = _apply_ema_incremental(
+                    daily_new, signal['current_ema'],
+                    signal.get('ema10_daily'), ema_periods,
+                    signal.get('last_daily_date'), is_weekly=False,
+                )
+                if new_ema_d:
+                    new_signal['current_ema'] = new_ema_d
+                    if new_ema10_d is not None:
+                        new_signal['ema10_daily'] = new_ema10_d
+                    new_signal['last_daily_date'] = str(daily_new.index[-1])[:10]
+
+            if signal.get('current_ema_weekly') and not weekly_new.empty:
+                new_ema_w, new_ema10_w = _apply_ema_incremental(
+                    weekly_new, signal['current_ema_weekly'],
+                    signal.get('ema10_weekly'), ema_periods,
+                    signal.get('last_weekly_date'), is_weekly=True,
+                )
+                if new_ema_w:
+                    new_signal['current_ema_weekly'] = new_ema_w
+                    if new_ema10_w is not None:
+                        new_signal['ema10_weekly'] = new_ema10_w
+                    new_signal['last_weekly_date'] = str(weekly_new.index[-1])[:10]
+
+            updated.append(new_signal)
+        except Exception as e:
+            print(f"[INCREMENTAL] Error for {ticker}: {e}")
+            updated.append(signal)
+
+    if new_tickers:
+        print(f"[INCREMENTAL] Adding {len(new_tickers)} new tickers (full calc)...")
+        for t, cat in new_tickers:
+            time.sleep(0.5)
+            sig = _fetch_ticker(t, cat)
+            if sig:
+                updated.append(sig)
+
+    now_str = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+    with cache_lock:
+        signals_cache['signals'] = updated
+        signals_cache['last_update'] = pd.Timestamp.now()
+        signals_cache['data_generated_at'] = now_str
+    try:
+        SIGNALS_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(SIGNALS_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'last_update': now_str, 'signals': updated}, f, ensure_ascii=False, default=str)
+    except Exception as e:
+        print(f"[INCREMENTAL] Failed to save: {e}")
+
+    print(f"[INCREMENTAL] Done! {len(updated)} signals in {_time.time() - start:.1f}s")
+
+
 def auto_refresh_background():
     """
-    Расписание (ET, торговые дни Пн-Пт):
-      15:15 ET — fast_scan_signals()  : текущие цены, ~30 сек, клиент видит сигналы
-      16:30 ET — refresh_signals()    : полный пересчёт с историей после закрытия свечи
+    Расписание (ET):
+      Пн-Пт 15:15 — fast_scan_signals()   : текущие цены, ~30 сек
+      Пн-Пт 16:30 — incremental_update()  : инкрементальный пересчёт EMA, ~1 мин
+      Воскресенье 10:00 — refresh_signals(): полный пересчёт раз в неделю
     """
     import zoneinfo
     global background_thread_stop
 
     et_tz = zoneinfo.ZoneInfo("America/New_York")
-    print("[AUTO-REFRESH] Started. Schedule: fast scan 15:15 ET, full rebuild 16:30 ET (Mon-Fri)")
+    print("[AUTO-REFRESH] Started. Schedule: fast 15:15 ET + incremental 16:30 ET (Mon-Fri), full rebuild Sun 10:00 ET")
 
     while not background_thread_stop:
         try:
-            now_et = pd.Timestamp.now(et_tz)
-            today  = now_et.normalize().tz_localize(None)
-            today_et = pd.Timestamp(today).tz_localize(et_tz)
+            now_et   = pd.Timestamp.now(et_tz)
+            today_et = now_et.normalize()
 
-            # Расписание на сегодня
-            fast_scan_et  = today_et + pd.Timedelta(hours=15, minutes=15)
-            full_build_et = today_et + pd.Timedelta(hours=16, minutes=30)
+            dow = now_et.dayofweek  # 0=Mon … 6=Sun
 
-            # Выбираем ближайшее будущее событие
             candidates = []
-            if now_et < fast_scan_et:
-                candidates.append(('fast_scan',  fast_scan_et))
-            if now_et < full_build_et:
-                candidates.append(('full_build', full_build_et))
+
+            if dow < 5:  # Пн-Пт
+                fast_scan_et  = today_et + pd.Timedelta(hours=15, minutes=15)
+                incremental_et = today_et + pd.Timedelta(hours=16, minutes=30)
+                if now_et < fast_scan_et:
+                    candidates.append(('fast_scan',   fast_scan_et))
+                if now_et < incremental_et:
+                    candidates.append(('incremental', incremental_et))
+
+            elif dow == 6:  # Воскресенье
+                full_build_et = today_et + pd.Timedelta(hours=10, minutes=0)
+                if now_et < full_build_et:
+                    candidates.append(('full_build', full_build_et))
 
             if not candidates:
-                # Оба события сегодня прошли — переходим к следующему торговому дню
-                next_day = today_et + pd.Timedelta(days=1)
-                while next_day.dayofweek >= 5:
-                    next_day += pd.Timedelta(days=1)
-                candidates.append(('fast_scan', next_day + pd.Timedelta(hours=15, minutes=15)))
+                # Ищем следующее ближайшее событие
+                check = now_et + pd.Timedelta(days=1)
+                for _ in range(7):
+                    check_day = check.normalize()
+                    if check.dayofweek < 5:
+                        candidates.append(('fast_scan', check_day + pd.Timedelta(hours=15, minutes=15)))
+                        break
+                    elif check.dayofweek == 6:
+                        candidates.append(('full_build', check_day + pd.Timedelta(hours=10, minutes=0)))
+                        break
+                    check += pd.Timedelta(days=1)
+
+            if not candidates:
+                time.sleep(3600)
+                continue
 
             kind, run_at = candidates[0]
-
-            # Пропускаем выходные
-            while run_at.dayofweek >= 5:
-                run_at += pd.Timedelta(days=1)
-
             wait_seconds = (run_at - now_et).total_seconds()
+            if wait_seconds < 0:
+                wait_seconds = 0
+
             print(f"[AUTO-REFRESH] Next: {kind} at {run_at.strftime('%Y-%m-%d %H:%M ET')} "
                   f"(in {int(wait_seconds/3600)}h {int((wait_seconds % 3600)/60)}m)")
 
-            time.sleep(wait_seconds)
+            time.sleep(max(wait_seconds, 1))
 
             if background_thread_stop:
                 break
@@ -1201,6 +1397,10 @@ def auto_refresh_background():
                 print(f"[AUTO-REFRESH] Starting fast scan at {pd.Timestamp.now()}")
                 fast_scan_signals()
                 print(f"[AUTO-REFRESH] Fast scan completed at {pd.Timestamp.now()}")
+            elif kind == 'incremental':
+                print(f"[AUTO-REFRESH] Starting incremental update at {pd.Timestamp.now()}")
+                incremental_update()
+                print(f"[AUTO-REFRESH] Incremental update completed at {pd.Timestamp.now()}")
             else:
                 print(f"[AUTO-REFRESH] Starting full rebuild at {pd.Timestamp.now()}")
                 refresh_signals()
@@ -1217,10 +1417,15 @@ async def startup_event():
     loaded = load_signals_from_file()
     if loaded:
         print("\n=== Signals loaded from file on startup ===")
-        if _is_data_stale(max_age_hours=12) and ENABLE_BACKGROUND_REFRESH:
-            print("=== Data is stale (>12h) — triggering background refresh ===")
-            t = threading.Thread(target=refresh_signals, daemon=True)
-            t.start()
+        if ENABLE_BACKGROUND_REFRESH:
+            if _is_data_stale(max_age_hours=168):  # >7 дней — полный пересчёт
+                print("=== Data is stale (>7d) — triggering full refresh ===")
+                t = threading.Thread(target=refresh_signals, daemon=True)
+                t.start()
+            elif _is_data_stale(max_age_hours=12):  # 12ч–7д — инкрементальное обновление
+                print("=== Data is stale (>12h) — triggering incremental update ===")
+                t = threading.Thread(target=incremental_update, daemon=True)
+                t.start()
     elif ENABLE_STARTUP_REFRESH:
         try:
             print("\n=== Loading signals on startup via yfinance ===")
@@ -1237,7 +1442,7 @@ async def startup_event():
     if ENABLE_BACKGROUND_REFRESH and not os.getenv("VERCEL"):
         bg = threading.Thread(target=auto_refresh_background, daemon=True)
         bg.start()
-        print("=== Auto-refresh scheduler started (15:15 fast scan + 16:30 full rebuild ET) ===")
+        print("=== Auto-refresh scheduler started (fast 15:15 + incremental 16:30 ET Mon-Fri, full rebuild Sun 10:00 ET) ===")
 
 
 if __name__ == "__main__":
@@ -1245,7 +1450,7 @@ if __name__ == "__main__":
 
     print("\n" + "="*50)
     print("StockScanner Backend Starting...")
-    print("Auto-refresh: fast scan 15:15 ET + full rebuild 16:30 ET (Mon-Fri)")
+    print("Auto-refresh: fast 15:15 + incremental 16:30 ET (Mon-Fri), full rebuild Sun 10:00 ET")
     print(f"API: http://127.0.0.1:{SERVER_PORT}")
     print("="*50 + "\n")
 
