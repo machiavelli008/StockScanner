@@ -128,6 +128,21 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
     # EMA10 нужна только для логики EMA20: верхняя граница зоны входа
     ema10_val = float(hist['ema_10'].iloc[-1]) if 'ema_10' in hist.columns else None
 
+    # Глобальный фильтр тренда: цена ниже 200 EMA = нисходящий тренд, сигналы не даём
+    ema_200_val = ema_values.get('ema_200')
+    if ema_200_val and current_price < ema_200_val:
+        return {
+            f'ema_{p}': {
+                'value': round(ema_values[f'ema_{p}'], 2),
+                'atr': round(current_atr, 2),
+                'distance_pct': round(abs(current_price - ema_values[f'ema_{p}']) / ema_values[f'ema_{p}'] * 100, 2),
+                'price_above': current_price >= ema_values[f'ema_{p}'],
+                'signal_type': None,
+                'wick_touch': False,
+            }
+            for p in ema_periods
+        }
+
     result = {}
     for period in ema_periods:
         col = f'ema_{period}'
@@ -211,6 +226,16 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
             'signal_type': signal_type,
             'wick_touch': wick_touch,
         }
+
+    # Одновременно не может гореть больше одной плашки — оставляем ближайшую EMA
+    active = [(k, v) for k, v in result.items() if v.get('signal_type')]
+    if len(active) > 1:
+        closest_key = min(active, key=lambda x: x[1]['distance_pct'])[0]
+        for k in result:
+            if result[k].get('signal_type') and k != closest_key:
+                result[k]['signal_type'] = None
+                result[k]['wick_touch'] = False
+
     return result
 
 
@@ -1006,6 +1031,24 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
     wick_pct     = 2.0 if is_weekly else 1.0
     approach_pct = 4.0 if is_weekly else 2.0
 
+    # Глобальный фильтр тренда: цена ниже 200 EMA = нисходящий тренд, сигналы не даём
+    _ema200 = stored_ema.get('ema_200', {})
+    _ema200_val = float(_ema200.get('value', 0)) if _ema200 else 0
+    if _ema200_val and current_price < _ema200_val:
+        result = {}
+        for ema_key, stored in stored_ema.items():
+            ema_val = stored.get('value')
+            dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2) if ema_val else 0
+            result[ema_key] = {
+                'value': ema_val,
+                'atr': stored.get('atr'),
+                'distance_pct': dist_pct,
+                'price_above': (current_price >= ema_val) if ema_val else False,
+                'signal_type': None,
+                'wick_touch': False,
+            }
+        return result
+
     result = {}
     for ema_key, stored in stored_ema.items():
         ema_val = stored.get('value')
@@ -1053,6 +1096,13 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
                     else:
                         signal_type = 'watching'
 
+        # EMA20: подавляем если цена упала слишком глубоко (уже у EMA50)
+        if period == 20 and signal_type is not None:
+            _ema50 = stored_ema.get('ema_50', {})
+            _ema50_val = float(_ema50.get('value', 0)) if _ema50 else 0
+            if _ema50_val and current_price <= _ema50_val * 1.01:
+                signal_type = None
+
         result[ema_key] = {
             'value': ema_val,
             'atr': stored.get('atr'),
@@ -1061,6 +1111,16 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
             'signal_type': signal_type,
             'wick_touch': signal_type == 'entry_zone' and dist_pct > entry_pct and low_wick_touch,
         }
+
+    # Одновременно не может гореть больше одной плашки — оставляем ближайшую EMA
+    active = [(k, v) for k, v in result.items() if v.get('signal_type')]
+    if len(active) > 1:
+        closest_key = min(active, key=lambda x: x[1]['distance_pct'])[0]
+        for k in result:
+            if result[k].get('signal_type') and k != closest_key:
+                result[k]['signal_type'] = None
+                result[k]['wick_touch'] = False
+
     return result
 
 
