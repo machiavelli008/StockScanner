@@ -691,6 +691,7 @@
                 >
                 <button class="btn-primary" onclick="loadTickerFromInput()">Check Ticker</button>
                 <button class="btn-secondary" onclick="refreshAndLoadSignals()">Refresh Universe</button>
+                <button class="btn-secondary" id="run-screener-btn" onclick="runScreener()">Run Screener</button>
             </div>
             <div class="status-row">
                 <div><span class="live-dot"></span>Auto-sync enabled</div>
@@ -815,6 +816,28 @@
                 container.innerHTML = '<div class="error">Error loading signals</div>';
                 setStatus('Load failed');
             }
+        }
+
+        async function runScreener() {
+            const btn = document.getElementById('run-screener-btn');
+            btn.disabled = true;
+            btn.textContent = 'Screener running...';
+            setStatus('Screener started — scanning all US stocks (~10-15 min)...');
+            await fetch('/api/screener/run', { method: 'POST' }).catch(() => {});
+            let elapsed = 0;
+            const interval = setInterval(() => {
+                elapsed += 1;
+                const mins = Math.floor(elapsed / 60);
+                const secs = elapsed % 60;
+                setStatus(`Screener running... ${mins}m ${secs}s`);
+            }, 1000);
+            // Ждём 15 минут максимум, потом разблокируем кнопку
+            setTimeout(() => {
+                clearInterval(interval);
+                btn.disabled = false;
+                btn.textContent = 'Run Screener';
+                setStatus('Screener finished. Refresh Universe to see new stocks.');
+            }, 15 * 60 * 1000);
         }
 
         async function refreshAndLoadSignals() {
