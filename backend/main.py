@@ -10,6 +10,8 @@ import time
 import os
 import io
 import json
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
 import screener as screener_module
 
 # Ленивый импорт yfinance - только когда нужен
