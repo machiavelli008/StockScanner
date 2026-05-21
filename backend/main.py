@@ -10,6 +10,7 @@ import time
 import os
 import io
 import json
+import screener as screener_module
 
 # Ленивый импорт yfinance - только когда нужен
 def get_yfinance():
@@ -55,30 +56,39 @@ def normalize_ohlc_columns(df):
 
 
 def load_tickers():
-    """Загружает тикеры из tickers.csv, возвращает список (ticker, category).
-    Fallback на DEFAULT_TICKERS с категорией 'Other'."""
+    """
+    Загружает активный список тикеров.
+    Приоритет: active_tickers.json (скринер) → tickers.csv → DEFAULT_TICKERS.
+    """
+    active_path = screener_module.ACTIVE_TICKERS_PATH
+    if active_path.exists():
+        try:
+            data = json.loads(active_path.read_text(encoding='utf-8'))
+            if data:
+                result = [(t, d.get('category', 'Screener')) for t, d in data.items()]
+                print(f"Loaded {len(result)} tickers from active_tickers.json")
+                return result
+        except Exception as e:
+            print(f"Failed to load active_tickers.json: {e}")
+
+    # Fallback: tickers.csv
     if not TICKERS_FILE_PATH.exists():
-        print(f"tickers.csv not found: {TICKERS_FILE_PATH}. Using default tickers.")
+        print(f"tickers.csv not found. Using default tickers.")
         return [(t, 'Other') for t in DEFAULT_TICKERS]
 
     try:
         df = pd.read_csv(TICKERS_FILE_PATH)
         if df.empty:
-            print("tickers.csv is empty. Using default tickers.")
             return [(t, 'Other') for t in DEFAULT_TICKERS]
 
-        # Поддерживаем типичные названия колонки: Ticker/ticker/symbol.
         normalized = {str(col).strip().lower(): col for col in df.columns}
         ticker_col = None
         for candidate in ["ticker", "symbol"]:
             if candidate in normalized:
                 ticker_col = normalized[candidate]
                 break
-
         if ticker_col is None:
             ticker_col = df.columns[0]
-
-        # Колонка категории
         category_col = normalized.get("category")
 
         result = []
@@ -99,7 +109,6 @@ def load_tickers():
             result.append((t, cat))
 
         if not result:
-            print("No valid tickers in tickers.csv. Using default tickers.")
             return [(t, 'Other') for t in DEFAULT_TICKERS]
 
         print(f"Loaded {len(result)} tickers from tickers.csv")
@@ -946,6 +955,34 @@ def get_signal_by_ticker(ticker: str):
     return {"error": f"Could not get data for {ticker}"}
 
 
+@app.get("/api/screener")
+def get_screener_results():
+    """Возвращает последние результаты скринера."""
+    path = screener_module.SCREENER_RESULTS_PATH
+    if not path.exists():
+        return {"last_update": None, "total_found": 0, "results": {}}
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/screener/active")
+def get_active_tickers():
+    """Возвращает текущий активный список тикеров."""
+    return screener_module.load_active_tickers()
+
+
+@app.post("/api/screener/run")
+def run_screener_endpoint():
+    """Запускает полный скан вселенной в фоновом потоке (~10-15 мин)."""
+    def _run():
+        yf = get_yfinance()
+        screener_module.run_full_screener(yf)
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "message": "Full screener started (~10-15 min)"}
+
+
 def _build_excel_from_rows(rows: list[dict]) -> io.BytesIO:
     """Генерирует Excel из списка строк."""
     df = pd.DataFrame(rows)
@@ -1399,7 +1436,7 @@ def auto_refresh_background():
     global background_thread_stop
 
     et_tz = zoneinfo.ZoneInfo("America/New_York")
-    print("[AUTO-REFRESH] Started. Schedule: fast 15:15 ET + incremental 16:30 ET (Mon-Fri), full rebuild Sun 10:00 ET")
+    print("[AUTO-REFRESH] Started. Schedule: fast 15:15 + incremental 16:30 (Mon-Fri), screener 23:00 (daily), full rebuild Sun 10:00 ET")
 
     while not background_thread_stop:
         try:
@@ -1411,15 +1448,26 @@ def auto_refresh_background():
             candidates = []
 
             if dow < 5:  # Пн-Пт
-                fast_scan_et  = today_et + pd.Timedelta(hours=15, minutes=15)
+                fast_scan_et   = today_et + pd.Timedelta(hours=15, minutes=15)
                 incremental_et = today_et + pd.Timedelta(hours=16, minutes=30)
+                screener_et    = today_et + pd.Timedelta(hours=23, minutes=0)
                 if now_et < fast_scan_et:
                     candidates.append(('fast_scan',   fast_scan_et))
                 if now_et < incremental_et:
                     candidates.append(('incremental', incremental_et))
+                if now_et < screener_et:
+                    candidates.append(('screener',    screener_et))
+
+            elif dow == 5:  # Суббота
+                screener_et = today_et + pd.Timedelta(hours=23, minutes=0)
+                if now_et < screener_et:
+                    candidates.append(('screener', screener_et))
 
             elif dow == 6:  # Воскресенье
+                screener_et   = today_et + pd.Timedelta(hours=8,  minutes=0)
                 full_build_et = today_et + pd.Timedelta(hours=10, minutes=0)
+                if now_et < screener_et:
+                    candidates.append(('screener',    screener_et))
                 if now_et < full_build_et:
                     candidates.append(('full_build', full_build_et))
 
@@ -1461,6 +1509,10 @@ def auto_refresh_background():
                 print(f"[AUTO-REFRESH] Starting incremental update at {pd.Timestamp.now()}")
                 incremental_update()
                 print(f"[AUTO-REFRESH] Incremental update completed at {pd.Timestamp.now()}")
+            elif kind == 'screener':
+                print(f"[AUTO-REFRESH] Starting screener at {pd.Timestamp.now()}")
+                screener_module.run_full_screener(get_yfinance())
+                print(f"[AUTO-REFRESH] Screener completed at {pd.Timestamp.now()}")
             else:
                 print(f"[AUTO-REFRESH] Starting full rebuild at {pd.Timestamp.now()}")
                 refresh_signals()
