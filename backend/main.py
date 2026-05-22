@@ -1013,6 +1013,12 @@ def telegram_debug():
 @app.post("/api/telegram/send")
 def telegram_send_endpoint():
     """Отправляет сигналы в Telegram и возвращает подробный результат."""
+    try:
+        return _telegram_send_impl()
+    except Exception as e:
+        return {"status": "error", "detail": f"Unexpected: {e}"}
+
+def _telegram_send_impl():
     import urllib.request, urllib.parse
 
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
