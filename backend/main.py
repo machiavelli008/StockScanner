@@ -1024,7 +1024,7 @@ def telegram_send_endpoint():
         return {"status": "error", "detail": "TELEGRAM_CHAT_ID не задан"}
 
     try:
-        with open(SIGNALS_FILE) as f:
+        with open(SIGNALS_JSON_PATH) as f:
             signals = json.load(f)
     except Exception as e:
         return {"status": "error", "detail": f"signals.json: {e}"}
@@ -1529,7 +1529,7 @@ def send_telegram_report():
         return
 
     try:
-        with open(SIGNALS_FILE) as f:
+        with open(SIGNALS_JSON_PATH) as f:
             signals = json.load(f)
     except Exception as e:
         print(f"[TELEGRAM] Не удалось прочитать signals.json: {e}")
