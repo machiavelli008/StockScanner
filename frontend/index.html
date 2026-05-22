@@ -399,6 +399,7 @@
         .banner-watching   { background: linear-gradient(90deg, #2563eb, #3b82f6); }
         .banner-approaching{ background: linear-gradient(90deg, #d97706, #f59e0b); }
         .banner-warning    { background: linear-gradient(90deg, #7f1d1d, #dc2626); }
+        .banner-strike     { background: linear-gradient(90deg, #7c3aed, #a855f7); }
 
         .signal-card.has-downtrend {
             border: 2px solid #dc2626;
@@ -1010,15 +1011,28 @@
                 ? `<span class="hammer-badge">${hammer.count === 1 ? '🔨 1 Hammer' : `🔨 ${hammer.count} Hammers`} (Weekly)</span>`
                 : '';
 
+            const strike = signal.strike_signal;
+            const strikeBanner = strike
+                ? (() => {
+                    const type = strike.type === 'triple' ? 'Triple Strike' : 'Double Strike';
+                    const dir  = strike.direction === 'bullish' ? 'Bullish' : 'Bearish';
+                    const tf   = strike.timeframe ? ` (${strike.timeframe.charAt(0).toUpperCase() + strike.timeframe.slice(1)})` : '';
+                    return `<div class="active-signal-banner banner-strike">⚡ ${type} — ${dir}${tf}</div>`;
+                })()
+                : '';
+
+            const skipProbForCard = !!(signal.ready_20ema || signal.strike_signal);
+
             return `
                 <article class="${cardClass}">
                     ${topBanner}
+                    ${strikeBanner}
                     <div class="ticker-header">
                         <span class="ticker-name">${escapeHtml(signal.ticker)}${sidewaysBadge}${hammerBadge}</span>
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>
                     </div>
-                    ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema, signal.ready_20ema)}
-                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema_weekly || signal.current_ema, signal.ready_20ema)}
+                    ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema, skipProbForCard)}
+                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema_weekly || signal.current_ema, skipProbForCard)}
                 </article>
             `;
         }
