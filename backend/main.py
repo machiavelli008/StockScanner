@@ -1000,9 +1000,57 @@ def get_active_tickers():
 
 @app.post("/api/telegram/send")
 def telegram_send_endpoint():
-    """Немедленно отправляет текущие сигналы в Telegram (для тестирования)."""
-    threading.Thread(target=send_telegram_report, daemon=True).start()
-    return {"status": "sent"}
+    """Отправляет сигналы в Telegram и возвращает подробный результат."""
+    import urllib.request, urllib.parse
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+    if not bot_token:
+        return {"status": "error", "detail": "TELEGRAM_BOT_TOKEN не задан"}
+    if not chat_id:
+        return {"status": "error", "detail": "TELEGRAM_CHAT_ID не задан"}
+
+    try:
+        with open(SIGNALS_FILE) as f:
+            signals = json.load(f)
+    except Exception as e:
+        return {"status": "error", "detail": f"signals.json: {e}"}
+
+    tickers_with_signals = []
+    for s in signals:
+        ticker = s.get("ticker", "")
+        ema_d = s.get("current_ema") or {}
+        ema_w = s.get("current_ema_weekly") or {}
+        has_ema = any(
+            isinstance(v, dict) and v.get("signal_type") in ("entry_zone", "approaching", "watching")
+            for d in (ema_d, ema_w) for k, v in d.items() if k != "ema_100"
+        )
+        if has_ema or s.get("ready_20ema") or s.get("strike_signal") or s.get("hammer_signal"):
+            tickers_with_signals.append(ticker)
+
+    if not tickers_with_signals:
+        return {"status": "ok", "detail": "Нет акций с сигналами"}
+
+    now_str = pd.Timestamp.now("America/New_York").strftime("%b %d, %Y")
+    text = f"{now_str}\n{', '.join(tickers_with_signals)}"
+
+    url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    data = urllib.parse.urlencode({
+        "chat_id":    chat_id,
+        "text":       text,
+    }).encode()
+
+    try:
+        req = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            if result.get("ok"):
+                return {"status": "ok", "tickers": tickers_with_signals}
+            else:
+                return {"status": "error", "detail": result}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 
 @app.post("/api/screener/run")
