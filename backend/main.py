@@ -998,6 +998,18 @@ def get_active_tickers():
     return screener_module.load_active_tickers()
 
 
+@app.get("/api/telegram/debug")
+def telegram_debug():
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat  = os.environ.get("TELEGRAM_CHAT_ID", "")
+    return {
+        "token_set": bool(token),
+        "token_len": len(token),
+        "chat_set":  bool(chat),
+        "chat_id":   chat,
+    }
+
+
 @app.post("/api/telegram/send")
 def telegram_send_endpoint():
     """Отправляет сигналы в Telegram и возвращает подробный результат."""
