@@ -1031,7 +1031,8 @@ def _telegram_send_impl():
 
     try:
         with open(SIGNALS_JSON_PATH) as f:
-            signals = json.load(f)
+            data = json.load(f)
+        signals = data.get("signals", data) if isinstance(data, dict) else data
     except Exception as e:
         return {"status": "error", "detail": f"signals.json: {e}"}
 
@@ -1536,7 +1537,8 @@ def send_telegram_report():
 
     try:
         with open(SIGNALS_JSON_PATH) as f:
-            signals = json.load(f)
+            data = json.load(f)
+        signals = data.get("signals", data) if isinstance(data, dict) else data
     except Exception as e:
         print(f"[TELEGRAM] Не удалось прочитать signals.json: {e}")
         return
