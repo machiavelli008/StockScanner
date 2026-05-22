@@ -1011,15 +1011,13 @@
                 ? `<span class="hammer-badge">${hammer.count === 1 ? '🔨 1 Hammer' : `🔨 ${hammer.count} Hammers`} (Weekly)</span>`
                 : '';
 
-            const strike = signal.strike_signal;
-            const strikeBanner = strike
-                ? (() => {
-                    const type = strike.type === 'triple' ? 'Triple Strike' : 'Double Strike';
-                    const dir  = strike.direction === 'bullish' ? 'Bullish' : 'Bearish';
-                    const tf   = strike.timeframe ? ` (${strike.timeframe.charAt(0).toUpperCase() + strike.timeframe.slice(1)})` : '';
-                    return `<div class="active-signal-banner banner-strike">⚡ ${type} — ${dir}${tf}</div>`;
-                })()
-                : '';
+            const strikes = Array.isArray(signal.strike_signal) ? signal.strike_signal : [];
+            const strikeBanner = strikes.map(s => {
+                const type = s.type === 'triple' ? 'Triple Strike' : 'Double Strike';
+                const dir  = s.direction === 'bullish' ? 'Bullish' : 'Bearish';
+                const tf   = s.timeframe ? ` (${s.timeframe.charAt(0).toUpperCase() + s.timeframe.slice(1)})` : '';
+                return `<div class="active-signal-banner banner-strike">⚡ ${type} — ${dir}${tf}</div>`;
+            }).join('');
 
             const skipProbForCard = !!(signal.ready_20ema || signal.strike_signal);
 

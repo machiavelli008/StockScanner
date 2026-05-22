@@ -720,6 +720,21 @@ def get_stock_signals(ticker, category='Other'):
         except Exception:
             is_ready_20ema = False
 
+        # Паттерн "двойной/тройной удар"
+        try:
+            strike_daily  = screener_module.screen_double_triple_strike(hist_daily)
+            strike_weekly = screener_module.screen_double_triple_strike(hist_weekly)
+            strike_signals = []
+            if strike_daily:
+                strike_daily['timeframe'] = 'daily'
+                strike_signals.append(strike_daily)
+            if strike_weekly:
+                strike_weekly['timeframe'] = 'weekly'
+                strike_signals.append(strike_weekly)
+            strike_signal = strike_signals if strike_signals else None
+        except Exception:
+            strike_signal = None
+
         result = {
             "ticker": ticker,
             "category": category,
@@ -727,6 +742,7 @@ def get_stock_signals(ticker, category='Other'):
             "downtrend_warning": downtrend_warning,
             "sideways_warning": sideways_warning,
             "ready_20ema": is_ready_20ema,
+            "strike_signal": strike_signal,
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
             # EMA10 хранится для fast_scan (верхняя граница зоны EMA20)
