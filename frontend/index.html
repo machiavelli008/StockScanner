@@ -898,11 +898,11 @@
             return 'prob-neutral';
         }
 
-        function getEmaBadge(emaInfo, prob1_5y) {
+        function getEmaBadge(emaInfo, prob1_5y, skipProbCheck) {
             if (!emaInfo) return '';
             const type = emaInfo.signal_type;
             const dist = `<span class="dist-pct">${emaInfo.distance_pct}%</span>`;
-            if (type === 'entry_zone' && prob1_5y >= 65)
+            if (type === 'entry_zone' && (skipProbCheck || prob1_5y >= 65))
                 return `<span class="ema-badge badge-entry">Ready to Buy</span>${dist}`;
             if (type === 'approaching')
                 return `<span class="ema-badge badge-approaching">Approaching</span>${dist}`;
@@ -911,9 +911,9 @@
             return emaInfo.distance_pct !== undefined ? dist : '';
         }
 
-        function emaRow(label, s1, s2, emaInfo) {
+        function emaRow(label, s1, s2, emaInfo, skipProbCheck) {
             if (!s1 || !s2) return '';
-            const badge = getEmaBadge(emaInfo, s1.probability);
+            const badge = getEmaBadge(emaInfo, s1.probability, skipProbCheck);
             const isEma200 = label.includes('200');
             const rally1 = isEma200 && s1.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s1.avg_rally_pct}%</div>` : '';
             const rally2 = isEma200 && s2.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s2.avg_rally_pct}%</div>` : '';
@@ -933,7 +933,7 @@
                 </tr>`;
         }
 
-        function tfTable(tfData, title, currentEma) {
+        function tfTable(tfData, title, currentEma, skipProbCheck) {
             const p1 = tfData.period_1_5y;
             const p2 = tfData.period_10y;
             const ema = currentEma || {};
@@ -949,9 +949,9 @@
                             </tr>
                         </thead>
                         <tbody>
-                            ${emaRow('EMA 20',  p1.ema_20,  p2.ema_20,  ema.ema_20)}
-                            ${emaRow('EMA 50',  p1.ema_50,  p2.ema_50,  ema.ema_50)}
-                            ${emaRow('EMA 200', p1.ema_200, p2.ema_200, ema.ema_200)}
+                            ${emaRow('EMA 20',  p1.ema_20,  p2.ema_20,  ema.ema_20,  skipProbCheck)}
+                            ${emaRow('EMA 50',  p1.ema_50,  p2.ema_50,  ema.ema_50,  skipProbCheck)}
+                            ${emaRow('EMA 200', p1.ema_200, p2.ema_200, ema.ema_200, skipProbCheck)}
                         </tbody>
                     </table>
                 </div>`;
@@ -1017,8 +1017,8 @@
                         <span class="ticker-name">${escapeHtml(signal.ticker)}${sidewaysBadge}${hammerBadge}</span>
                         <span class="current-price">$${escapeHtml(String(signal.current_price))}</span>
                     </div>
-                    ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema)}
-                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema_weekly || signal.current_ema)}
+                    ${tfTable(signal.daily, 'Daily Resolution', signal.current_ema, signal.ready_20ema)}
+                    ${tfTable(signal.weekly, 'Weekly Resolution', signal.current_ema_weekly || signal.current_ema, signal.ready_20ema)}
                 </article>
             `;
         }

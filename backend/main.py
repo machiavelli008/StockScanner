@@ -714,12 +714,19 @@ def get_stock_signals(ticker, category='Other'):
             current_ema_daily   = compute_current_ema_signals(hist_daily,   current_price, ema_periods, is_weekly=False)
             current_ema_weekly  = compute_current_ema_signals(hist_weekly,  current_price, ema_periods, is_weekly=True)
 
+        # Паттерн "подхват скользящими": цена между EMA10 и EMA20 минимум 2 бара
+        try:
+            is_ready_20ema = screener_module.screen_ready_20ema(hist_daily)
+        except Exception:
+            is_ready_20ema = False
+
         result = {
             "ticker": ticker,
             "category": category,
             "current_price": round(current_price, 2),
             "downtrend_warning": downtrend_warning,
             "sideways_warning": sideways_warning,
+            "ready_20ema": is_ready_20ema,
             "current_ema": current_ema_daily,
             "current_ema_weekly": current_ema_weekly,
             # EMA10 хранится для fast_scan (верхняя граница зоны EMA20)
