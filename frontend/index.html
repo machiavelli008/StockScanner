@@ -958,39 +958,36 @@
         }
 
         function renderSignalCard(signal) {
-            const ema = signal.current_ema || {};
-            const emaW = signal.current_ema_weekly || ema;
+            const ema  = signal.current_ema || {};
+            const emaW = signal.current_ema_weekly || {};
 
-            // Определяем наивысший приоритет сигнала для карточки (daily + weekly)
-            const entries = [...Object.entries(ema), ...Object.entries(emaW)].filter(([k]) => k !== 'ema_100');
-            const dailyProbs = signal.daily && signal.daily.period_1_5y || {};
+            const dEntries = Object.entries(ema) .filter(([k]) => k !== 'ema_100');
+            const wEntries = Object.entries(emaW).filter(([k]) => k !== 'ema_100');
+            const entries  = [...dEntries, ...wEntries];
 
-            const hasEntry = entries.some(([k, v]) =>
-                v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65);
-            const hasApproaching = entries.some(([k, v]) => v.signal_type === 'approaching');
-            const hasWatching = entries.some(([k, v]) => v.signal_type === 'watching');
+            const hasEntry      = entries.some(([, v]) => v.signal_type === 'entry_zone');
+            const hasApproaching = entries.some(([, v]) => v.signal_type === 'approaching');
+            const hasWatching   = entries.some(([, v]) => v.signal_type === 'watching');
+
+            // Имена с указанием таймфрейма: "EMA 20 Daily", "EMA 50 Weekly"
+            function signalNames(type) {
+                const d = dEntries.filter(([, v]) => v.signal_type === type).map(([k]) => `${k.replace('ema_', 'EMA ')} Daily`);
+                const w = wEntries.filter(([, v]) => v.signal_type === type).map(([k]) => `${k.replace('ema_', 'EMA ')} Weekly`);
+                return [...d, ...w].join(', ');
+            }
 
             let cardClass = 'signal-card';
             let banner = '';
 
             if (hasEntry) {
                 cardClass += ' has-active-signal';
-                const names = entries
-                    .filter(([k, v]) => v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65)
-                    .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-entry">Ready to Buy — ${names.join(', ')}</div>`;
-            } else if (hasWatching) {
-                cardClass += ' has-watching';
-                const names = entries
-                    .filter(([, v]) => v.signal_type === 'watching')
-                    .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-watching">Watching — ${names.join(', ')}</div>`;
+                banner = `<div class="active-signal-banner banner-entry">Ready to Buy — ${signalNames('entry_zone')}</div>`;
             } else if (hasApproaching) {
                 cardClass += ' has-approaching';
-                const names = entries
-                    .filter(([, v]) => v.signal_type === 'approaching')
-                    .map(([k]) => k.replace('ema_', 'EMA '));
-                banner = `<div class="active-signal-banner banner-approaching">Approaching — ${names.join(', ')}</div>`;
+                banner = `<div class="active-signal-banner banner-approaching">Approaching — ${signalNames('approaching')}</div>`;
+            } else if (hasWatching) {
+                cardClass += ' has-watching';
+                banner = `<div class="active-signal-banner banner-watching">Watching — ${signalNames('watching')}</div>`;
             }
 
             const downtrendHtml = signal.downtrend_warning
@@ -1034,11 +1031,10 @@
 
         function getSignalPriority(signal) {
             const ema = signal.current_ema || {};
-            const emaW = signal.current_ema_weekly || ema;
+            const emaW = signal.current_ema_weekly || {};
             const entries = [...Object.entries(ema), ...Object.entries(emaW)];
-            const dailyProbs = (signal.daily && signal.daily.period_1_5y) || {};
 
-            if (entries.some(([k, v]) => v.signal_type === 'entry_zone' && (dailyProbs[k] || {}).probability >= 65))
+            if (entries.some(([, v]) => v.signal_type === 'entry_zone'))
                 return 0;
             if (entries.some(([, v]) => v.signal_type === 'approaching'))
                 return 1;
@@ -1144,9 +1140,6 @@
                 }
             });
 
-            setInterval(() => {
-                loadSignals();
-            }, 60000);
         });
 
         // ── Batch Analyzer ──────────────────────────────────────────
