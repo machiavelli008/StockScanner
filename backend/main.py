@@ -1021,8 +1021,8 @@ def telegram_send_endpoint():
 def _telegram_send_impl():
     import urllib.request, urllib.parse
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
     if not bot_token:
         return {"status": "error", "detail": "TELEGRAM_BOT_TOKEN не задан"}
@@ -1529,8 +1529,8 @@ def send_telegram_report():
     import urllib.request
     import urllib.parse
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not bot_token or not chat_id:
         print("[TELEGRAM] BOT_TOKEN или CHAT_ID не заданы — пропускаем")
         return
