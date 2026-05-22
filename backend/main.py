@@ -1475,86 +1475,27 @@ def send_telegram_report():
         print(f"[TELEGRAM] Не удалось прочитать signals.json: {e}")
         return
 
-    entry_lines    = []
-    approach_lines = []
-    watch_lines    = []
-    strike_lines   = []
-    ready_lines    = []
-    hammer_lines   = []
-
+    tickers_with_signals = []
     for s in signals:
         ticker = s.get("ticker", "")
-        price  = s.get("current_price", "")
-
         ema_d = s.get("current_ema") or {}
         ema_w = s.get("current_ema_weekly") or {}
+        has_ema = any(
+            isinstance(v, dict) and v.get("signal_type") in ("entry_zone", "approaching", "watching")
+            for d in (ema_d, ema_w) for k, v in d.items() if k != "ema_100"
+        )
+        if has_ema or s.get("ready_20ema") or s.get("strike_signal") or s.get("hammer_signal"):
+            tickers_with_signals.append(ticker)
 
-        def sig_names(d, label):
-            names = []
-            for k, v in d.items():
-                if k == "ema_100":
-                    continue
-                if isinstance(v, dict) and v.get("signal_type") == label:
-                    names.append(k.replace("ema_", "EMA "))
-            return names
-
-        d_entry    = sig_names(ema_d, "entry_zone")
-        w_entry    = sig_names(ema_w, "entry_zone")
-        d_approach = sig_names(ema_d, "approaching")
-        w_approach = sig_names(ema_w, "approaching")
-        d_watch    = sig_names(ema_d, "watching")
-        w_watch    = sig_names(ema_w, "watching")
-
-        entry_labels    = [f"{n} Daily" for n in d_entry]    + [f"{n} Weekly" for n in w_entry]
-        approach_labels = [f"{n} Daily" for n in d_approach] + [f"{n} Weekly" for n in w_approach]
-        watch_labels    = [f"{n} Daily" for n in d_watch]    + [f"{n} Weekly" for n in w_watch]
-
-        line = f"<b>{ticker}</b> ${price}"
-
-        if s.get("ready_20ema"):
-            ready_lines.append(line)
-        elif entry_labels:
-            entry_lines.append(f"{line} — {', '.join(entry_labels)}")
-        elif approach_labels:
-            approach_lines.append(f"{line} — {', '.join(approach_labels)}")
-        elif watch_labels:
-            watch_lines.append(f"{line} — {', '.join(watch_labels)}")
-
-        for st in (s.get("strike_signal") or []):
-            t  = "Triple Strike" if st.get("type") == "triple" else "Double Strike"
-            dr = "Bullish" if st.get("direction") == "bullish" else "Bearish"
-            tf = st.get("timeframe", "").capitalize()
-            strike_lines.append(f"{line} — {t} {dr} ({tf})")
-
-        if s.get("hammer_signal"):
-            cnt = s["hammer_signal"].get("count", 1)
-            hammer_lines.append(f"{line} — {cnt} Hammer{'s' if cnt > 1 else ''} (Weekly)")
-
-    sections = []
-    if ready_lines:
-        sections.append("🎯 <b>Ready 20 EMA</b>\n" + "\n".join(f"• {l}" for l in ready_lines))
-    if entry_lines:
-        sections.append("🟢 <b>Ready to Buy</b>\n" + "\n".join(f"• {l}" for l in entry_lines))
-    if approach_lines:
-        sections.append("🟡 <b>Approaching</b>\n" + "\n".join(f"• {l}" for l in approach_lines))
-    if watch_lines:
-        sections.append("👁 <b>Watching</b>\n" + "\n".join(f"• {l}" for l in watch_lines))
-    if strike_lines:
-        sections.append("⚡ <b>Double/Triple Strike</b>\n" + "\n".join(f"• {l}" for l in strike_lines))
-    if hammer_lines:
-        sections.append("🔨 <b>Hammer Patterns</b>\n" + "\n".join(f"• {l}" for l in hammer_lines))
-
-    if not sections:
+    if not tickers_with_signals:
         print("[TELEGRAM] Нет сигналов для отправки")
         return
 
-    total = len({l.split(" $")[0].lstrip("• ") for sec in sections for l in sec.split("\n")[1:]})
-    now_str = pd.Timestamp.now("America/New_York").strftime("%b %d, %H:%M ET")
-    text = f"📊 <b>Stock Scanner — {now_str}</b>\n\n" + "\n\n".join(sections) + f"\n\n<i>Total: {total} stocks</i>"
+    now_str = pd.Timestamp.now("America/New_York").strftime("%b %d, %Y")
+    text = f"{now_str}\n{', '.join(tickers_with_signals)}"
 
-    # Telegram ограничивает сообщение 4096 символами — режем если нужно
     if len(text) > 4096:
-        text = text[:4090] + "\n..."
+        text = text[:4090] + "..."
 
     url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     data = urllib.parse.urlencode({
