@@ -998,6 +998,13 @@ def get_active_tickers():
     return screener_module.load_active_tickers()
 
 
+@app.post("/api/telegram/send")
+def telegram_send_endpoint():
+    """Немедленно отправляет текущие сигналы в Telegram (для тестирования)."""
+    threading.Thread(target=send_telegram_report, daemon=True).start()
+    return {"status": "sent"}
+
+
 @app.post("/api/screener/run")
 def run_screener_endpoint():
     """Запускает полный скан вселенной в фоновом потоке (~10-15 мин)."""
@@ -1450,9 +1457,128 @@ def incremental_update():
     print(f"[INCREMENTAL] Done! {len(updated)} signals in {_time.time() - start:.1f}s")
 
 
+def send_telegram_report():
+    """Отправляет все текущие сигналы с плашками в Telegram (14:00 ET по будням)."""
+    import urllib.request
+    import urllib.parse
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not bot_token or not chat_id:
+        print("[TELEGRAM] BOT_TOKEN или CHAT_ID не заданы — пропускаем")
+        return
+
+    try:
+        with open(SIGNALS_FILE) as f:
+            signals = json.load(f)
+    except Exception as e:
+        print(f"[TELEGRAM] Не удалось прочитать signals.json: {e}")
+        return
+
+    entry_lines    = []
+    approach_lines = []
+    watch_lines    = []
+    strike_lines   = []
+    ready_lines    = []
+    hammer_lines   = []
+
+    for s in signals:
+        ticker = s.get("ticker", "")
+        price  = s.get("current_price", "")
+
+        ema_d = s.get("current_ema") or {}
+        ema_w = s.get("current_ema_weekly") or {}
+
+        def sig_names(d, label):
+            names = []
+            for k, v in d.items():
+                if k == "ema_100":
+                    continue
+                if isinstance(v, dict) and v.get("signal_type") == label:
+                    names.append(k.replace("ema_", "EMA "))
+            return names
+
+        d_entry    = sig_names(ema_d, "entry_zone")
+        w_entry    = sig_names(ema_w, "entry_zone")
+        d_approach = sig_names(ema_d, "approaching")
+        w_approach = sig_names(ema_w, "approaching")
+        d_watch    = sig_names(ema_d, "watching")
+        w_watch    = sig_names(ema_w, "watching")
+
+        entry_labels    = [f"{n} Daily" for n in d_entry]    + [f"{n} Weekly" for n in w_entry]
+        approach_labels = [f"{n} Daily" for n in d_approach] + [f"{n} Weekly" for n in w_approach]
+        watch_labels    = [f"{n} Daily" for n in d_watch]    + [f"{n} Weekly" for n in w_watch]
+
+        line = f"<b>{ticker}</b> ${price}"
+
+        if s.get("ready_20ema"):
+            ready_lines.append(line)
+        elif entry_labels:
+            entry_lines.append(f"{line} — {', '.join(entry_labels)}")
+        elif approach_labels:
+            approach_lines.append(f"{line} — {', '.join(approach_labels)}")
+        elif watch_labels:
+            watch_lines.append(f"{line} — {', '.join(watch_labels)}")
+
+        for st in (s.get("strike_signal") or []):
+            t  = "Triple Strike" if st.get("type") == "triple" else "Double Strike"
+            dr = "Bullish" if st.get("direction") == "bullish" else "Bearish"
+            tf = st.get("timeframe", "").capitalize()
+            strike_lines.append(f"{line} — {t} {dr} ({tf})")
+
+        if s.get("hammer_signal"):
+            cnt = s["hammer_signal"].get("count", 1)
+            hammer_lines.append(f"{line} — {cnt} Hammer{'s' if cnt > 1 else ''} (Weekly)")
+
+    sections = []
+    if ready_lines:
+        sections.append("🎯 <b>Ready 20 EMA</b>\n" + "\n".join(f"• {l}" for l in ready_lines))
+    if entry_lines:
+        sections.append("🟢 <b>Ready to Buy</b>\n" + "\n".join(f"• {l}" for l in entry_lines))
+    if approach_lines:
+        sections.append("🟡 <b>Approaching</b>\n" + "\n".join(f"• {l}" for l in approach_lines))
+    if watch_lines:
+        sections.append("👁 <b>Watching</b>\n" + "\n".join(f"• {l}" for l in watch_lines))
+    if strike_lines:
+        sections.append("⚡ <b>Double/Triple Strike</b>\n" + "\n".join(f"• {l}" for l in strike_lines))
+    if hammer_lines:
+        sections.append("🔨 <b>Hammer Patterns</b>\n" + "\n".join(f"• {l}" for l in hammer_lines))
+
+    if not sections:
+        print("[TELEGRAM] Нет сигналов для отправки")
+        return
+
+    total = len({l.split(" $")[0].lstrip("• ") for sec in sections for l in sec.split("\n")[1:]})
+    now_str = pd.Timestamp.now("America/New_York").strftime("%b %d, %H:%M ET")
+    text = f"📊 <b>Stock Scanner — {now_str}</b>\n\n" + "\n\n".join(sections) + f"\n\n<i>Total: {total} stocks</i>"
+
+    # Telegram ограничивает сообщение 4096 символами — режем если нужно
+    if len(text) > 4096:
+        text = text[:4090] + "\n..."
+
+    url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    data = urllib.parse.urlencode({
+        "chat_id":    chat_id,
+        "text":       text,
+        "parse_mode": "HTML",
+    }).encode()
+
+    try:
+        req = urllib.request.Request(url, data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            if result.get("ok"):
+                print(f"[TELEGRAM] Отправлено {total} акций")
+            else:
+                print(f"[TELEGRAM] Ошибка API: {result}")
+    except Exception as e:
+        print(f"[TELEGRAM] Ошибка отправки: {e}")
+
+
 def auto_refresh_background():
     """
     Расписание (ET):
+      Пн-Пт 14:00 — send_telegram_report(): дайджест сигналов
       Пн-Пт 15:15 — fast_scan_signals()   : текущие цены, ~30 сек
       Пн-Пт 16:30 — incremental_update()  : инкрементальный пересчёт EMA, ~1 мин
       Воскресенье 10:00 — refresh_signals(): полный пересчёт раз в неделю
@@ -1473,9 +1599,12 @@ def auto_refresh_background():
             candidates = []
 
             if dow < 5:  # Пн-Пт
+                telegram_et    = today_et + pd.Timedelta(hours=14, minutes=0)
                 fast_scan_et   = today_et + pd.Timedelta(hours=15, minutes=15)
                 incremental_et = today_et + pd.Timedelta(hours=16, minutes=30)
                 screener_et    = today_et + pd.Timedelta(hours=23, minutes=0)
+                if now_et < telegram_et:
+                    candidates.append(('telegram',    telegram_et))
                 if now_et < fast_scan_et:
                     candidates.append(('fast_scan',   fast_scan_et))
                 if now_et < incremental_et:
@@ -1526,7 +1655,10 @@ def auto_refresh_background():
             if background_thread_stop:
                 break
 
-            if kind == 'fast_scan':
+            if kind == 'telegram':
+                print(f"[AUTO-REFRESH] Sending Telegram report at {pd.Timestamp.now()}")
+                send_telegram_report()
+            elif kind == 'fast_scan':
                 print(f"[AUTO-REFRESH] Starting fast scan at {pd.Timestamp.now()}")
                 fast_scan_signals()
                 print(f"[AUTO-REFRESH] Fast scan completed at {pd.Timestamp.now()}")
