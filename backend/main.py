@@ -256,8 +256,8 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
     return result
 
 
-def _is_tight_range(hist, lookback=15, max_range_pct=0.04):
-    """True если последние lookback свечей торгуются в диапазоне < max_range_pct (4%).
+def _is_tight_range(hist, lookback=15, max_range_pct=0.02):
+    """True если последние lookback свечей торгуются в диапазоне < 2% (±1%).
     Такие акции в суперузкой консолидации — сигналы не актуальны."""
     if len(hist) < lookback:
         return False
