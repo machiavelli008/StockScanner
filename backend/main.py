@@ -227,6 +227,12 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
             if current_price <= float(hist['ema_50'].iloc[-1]) * 1.01:
                 signal_type = None
 
+        # EMA50: снимаем если цена уже закрылась выше EMA20 (сетап отыгран)
+        if period == 50 and signal_type is not None:
+            ema20_val = ema_values.get('ema_20')
+            if ema20_val and current_price > ema20_val:
+                signal_type = None
+
         wick_touch = signal_type == 'entry_zone' and dist_pct > entry_pct and low_wick_touch
 
         result[col] = {
@@ -248,6 +254,20 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                 result[k]['wick_touch'] = False
 
     return result
+
+
+def _is_tight_range(hist, lookback=15, max_range_pct=0.04):
+    """True если последние lookback свечей торгуются в диапазоне < max_range_pct (4%).
+    Такие акции в суперузкой консолидации — сигналы не актуальны."""
+    if len(hist) < lookback:
+        return False
+    recent = hist.iloc[-lookback:]
+    hi  = float(recent['High'].max())
+    lo  = float(recent['Low'].min())
+    mid = (hi + lo) / 2
+    if mid <= 0:
+        return False
+    return (hi - lo) / mid < max_range_pct
 
 
 def calculate_atr(data, period=14):
@@ -705,9 +725,14 @@ def get_stock_signals(ticker, category='Other'):
 
         print(f"Analyzing touches for {ticker}...")
 
+        # Суперузкий диапазон: акция в tight consolidation — все сигналы отключаем
+        tight_range = _is_tight_range(hist_daily)
+        if tight_range:
+            print(f"  INFO: {ticker} in tight range (<4% over 15 bars) — skipping signals")
+
         # Плашки считаются отдельно для дневного и недельного таймфреймов
-        # Если акция в боковике — EMA сигналы не показываем
-        if sideways_warning:
+        # Если акция в боковике или в tight range — EMA сигналы не показываем
+        if sideways_warning or tight_range:
             current_ema_daily = {}
             current_ema_weekly = {}
         else:
@@ -716,22 +741,25 @@ def get_stock_signals(ticker, category='Other'):
 
         # Паттерн "подхват скользящими": цена между EMA10 и EMA20 минимум 2 бара
         try:
-            is_ready_20ema = screener_module.screen_ready_20ema(hist_daily)
+            is_ready_20ema = False if tight_range else screener_module.screen_ready_20ema(hist_daily)
         except Exception:
             is_ready_20ema = False
 
         # Паттерн "двойной/тройной удар"
         try:
-            strike_daily  = screener_module.screen_double_triple_strike(hist_daily)
-            strike_weekly = screener_module.screen_double_triple_strike(hist_weekly)
-            strike_signals = []
-            if strike_daily:
-                strike_daily['timeframe'] = 'daily'
-                strike_signals.append(strike_daily)
-            if strike_weekly:
-                strike_weekly['timeframe'] = 'weekly'
-                strike_signals.append(strike_weekly)
-            strike_signal = strike_signals if strike_signals else None
+            if tight_range:
+                strike_signal = None
+            else:
+                strike_daily  = screener_module.screen_double_triple_strike(hist_daily)
+                strike_weekly = screener_module.screen_double_triple_strike(hist_weekly)
+                strike_signals = []
+                if strike_daily:
+                    strike_daily['timeframe'] = 'daily'
+                    strike_signals.append(strike_daily)
+                if strike_weekly:
+                    strike_weekly['timeframe'] = 'weekly'
+                    strike_signals.append(strike_weekly)
+                strike_signal = strike_signals if strike_signals else None
         except Exception:
             strike_signal = None
 
@@ -1237,6 +1265,13 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
             _ema50 = stored_ema.get('ema_50', {})
             _ema50_val = float(_ema50.get('value', 0)) if _ema50 else 0
             if _ema50_val and current_price <= _ema50_val * 1.01:
+                signal_type = None
+
+        # EMA50: снимаем если цена уже закрылась выше EMA20 (сетап отыгран)
+        if period == 50 and signal_type is not None:
+            _ema20 = stored_ema.get('ema_20', {})
+            _ema20_val = float(_ema20.get('value', 0)) if _ema20 else 0
+            if _ema20_val and current_price > _ema20_val:
                 signal_type = None
 
         result[ema_key] = {

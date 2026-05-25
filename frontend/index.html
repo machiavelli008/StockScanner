@@ -400,6 +400,8 @@
         .banner-approaching{ background: linear-gradient(90deg, #d97706, #f59e0b); }
         .banner-warning    { background: linear-gradient(90deg, #7f1d1d, #dc2626); }
         .banner-strike     { background: linear-gradient(90deg, #7c3aed, #a855f7); }
+        .banner-watchlist  { background: linear-gradient(90deg, #b45309, #d97706); }
+        .has-watchlist     { border-color: #d97706; }
 
         .signal-card.has-downtrend {
             border: 2px solid #dc2626;
@@ -977,12 +979,32 @@
                 return [...d, ...w].join(', ');
             }
 
+            // Макс. вероятность среди entry_zone сигналов (для фильтра 65%)
+            function getEntryMaxProb() {
+                const p1d = (signal.daily   && signal.daily.period_1_5y)   || {};
+                const p1w = (signal.weekly  && signal.weekly.period_1_5y)  || {};
+                let max = 0;
+                for (const [k, v] of dEntries)
+                    if (v.signal_type === 'entry_zone' && p1d[k]) max = Math.max(max, p1d[k].probability || 0);
+                for (const [k, v] of wEntries)
+                    if (v.signal_type === 'entry_zone' && p1w[k]) max = Math.max(max, p1w[k].probability || 0);
+                return max;
+            }
+
             let cardClass = 'signal-card';
             let banner = '';
 
             if (hasEntry) {
-                cardClass += ' has-active-signal';
-                banner = `<div class="active-signal-banner banner-entry">Ready to Buy — ${signalNames('entry_zone')}</div>`;
+                const highConf = signal.ready_20ema
+                    || !!(signal.strike_signal && signal.strike_signal.length)
+                    || getEntryMaxProb() >= 65;
+                if (highConf) {
+                    cardClass += ' has-active-signal';
+                    banner = `<div class="active-signal-banner banner-entry">Ready to Buy — ${signalNames('entry_zone')}</div>`;
+                } else {
+                    cardClass += ' has-watchlist';
+                    banner = `<div class="active-signal-banner banner-watchlist">Присмотреться — ${signalNames('entry_zone')}</div>`;
+                }
             } else if (hasApproaching) {
                 cardClass += ' has-approaching';
                 banner = `<div class="active-signal-banner banner-approaching">Approaching — ${signalNames('approaching')}</div>`;

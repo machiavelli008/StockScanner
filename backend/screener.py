@@ -116,8 +116,12 @@ def screen_ready_20ema(hist: pd.DataFrame) -> bool:
     """
     if len(hist) < 5:
         return False
-    cur = float(hist['Close'].iloc[-1])
+    cur  = float(hist['Close'].iloc[-1])
+    e10c = float(hist['ema_10'].iloc[-1])
     if cur < float(hist['ema_50'].iloc[-1]) or cur < float(hist['ema_200'].iloc[-1]):
+        return False
+    # Цена уже ушла выше EMA10 более чем на 0.5% — сигнал устарел, точки входа нет
+    if cur > e10c * 1.005:
         return False
 
     consecutive = 0
