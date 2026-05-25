@@ -1020,6 +1020,78 @@ def get_screener_results():
         return {"error": str(e)}
 
 
+@app.get("/api/debug/touches/{ticker}")
+def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: int = 5):
+    """
+    Возвращает даты и классификацию каждого касания EMA для указанного тикера.
+    Параметры: ema=20|50|200, timeframe=daily|weekly, years=1-10
+    """
+    try:
+        yf = get_yfinance()
+        hist = yf.download(ticker.upper(), period="15y",
+                           interval="1wk" if timeframe == "weekly" else "1d",
+                           progress=False, auto_adjust=False)
+        hist = normalize_ohlc_columns(hist)
+        if hist.empty:
+            return {"error": f"No data for {ticker}"}
+
+        for p in [10, 20, 50, 100, 200]:
+            hist[f'ema_{p}'] = calculate_ema(hist['Close'], p)
+        hist = calculate_atr(hist, 14)
+        hist = hist.dropna()
+        hist.index = pd.to_datetime(hist.index)
+
+        # Обрезаем до нужного периода
+        cutoff = hist.index.max() - pd.DateOffset(years=years)
+        hist = hist[hist.index > cutoff]
+
+        ema_col = f'ema_{ema}'
+        all_ema_cols = ['ema_20', 'ema_50', 'ema_100', 'ema_200']
+        lower_emas = [] if ema == 20 else [c for c in all_ema_cols if c != ema_col]
+
+        if timeframe == "weekly":
+            touches = find_touch_events(
+                hist, ema_col, 'atr',
+                lower_ema_cols=lower_emas if lower_emas else None,
+                cooldown_bars=2,
+                require_rally_after_negative=True,
+                max_bars_below_ema=3 if ema <= 50 else None,
+                min_ema_slope_bars=8 if ema <= 50 else 0,
+                min_ema_slope_pct=0.01 if ema == 20 else 0.015,
+            )
+        else:
+            touches = find_touch_events(
+                hist, ema_col, 'atr',
+                lower_ema_cols=lower_emas if lower_emas else None,
+                cooldown_bars=0,
+                min_ema_slope_pct=0.01 if ema == 20 else 0.015,
+            )
+
+        result = []
+        for t in touches:
+            result.append({
+                "date":   str(t['date'])[:10],
+                "result": t['result'],
+                "price":  round(t['price'], 2),
+                "ema":    round(t['ema'], 2),
+                "atr":    round(t['atr'], 2),
+            })
+
+        positive = sum(1 for t in result if t['result'] == 'positive')
+        negative = sum(1 for t in result if t['result'] == 'negative')
+
+        return {
+            "ticker":    ticker.upper(),
+            "ema":       ema_col,
+            "timeframe": timeframe,
+            "period":    f"last {years}y",
+            "summary":   {"positive": positive, "negative": negative, "total": len(result)},
+            "touches":   result,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/screener/active")
 def get_active_tickers():
     """Возвращает текущий активный список тикеров."""
