@@ -1715,12 +1715,9 @@ def auto_refresh_background():
             candidates = []
 
             if dow < 5:  # Пн-Пт
-                telegram_et    = today_et + pd.Timedelta(hours=14, minutes=0)
                 fast_scan_et   = today_et + pd.Timedelta(hours=15, minutes=15)
                 incremental_et = today_et + pd.Timedelta(hours=16, minutes=30)
                 screener_et    = today_et + pd.Timedelta(hours=23, minutes=0)
-                if now_et < telegram_et:
-                    candidates.append(('telegram',    telegram_et))
                 if now_et < fast_scan_et:
                     candidates.append(('fast_scan',   fast_scan_et))
                 if now_et < incremental_et:
@@ -1771,10 +1768,7 @@ def auto_refresh_background():
             if background_thread_stop:
                 break
 
-            if kind == 'telegram':
-                print(f"[AUTO-REFRESH] Sending Telegram report at {pd.Timestamp.now()}")
-                send_telegram_report()
-            elif kind == 'fast_scan':
+            if kind == 'fast_scan':
                 print(f"[AUTO-REFRESH] Starting fast scan at {pd.Timestamp.now()}")
                 fast_scan_signals()
                 print(f"[AUTO-REFRESH] Fast scan completed at {pd.Timestamp.now()}")
