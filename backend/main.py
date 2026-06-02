@@ -1110,6 +1110,11 @@ def telegram_debug():
     }
 
 
+@app.get("/api/telegram/send")
+def telegram_send_get():
+    return _telegram_send_impl()
+
+
 @app.post("/api/telegram/send")
 def telegram_send_endpoint():
     """Отправляет сигналы в Telegram и возвращает подробный результат."""
