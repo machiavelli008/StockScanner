@@ -1018,10 +1018,10 @@ def get_screener_results():
 
 
 @app.get("/api/debug/touches/{ticker}")
-def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: int = 5):
+def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly",
+                  years: int = 5, debug: bool = False):
     """
-    Возвращает даты и классификацию каждого касания EMA для указанного тикера.
-    Параметры: ema=20|50|200, timeframe=daily|weekly, years=1-10
+    Возвращает касания EMA. С ?debug=true показывает причину пропуска каждого бара.
     """
     try:
         yf = get_yfinance()
@@ -1038,29 +1038,32 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: 
         hist = hist.dropna()
         hist.index = pd.to_datetime(hist.index)
 
-        # Обрезаем до нужного периода
         cutoff = hist.index.max() - pd.DateOffset(years=years)
         hist = hist[hist.index > cutoff]
 
-        ema_col = f'ema_{ema}'
-        all_ema_cols = ['ema_20', 'ema_50', 'ema_100', 'ema_200']
-        lower_emas = [] if ema == 20 else [c for c in all_ema_cols if c != ema_col]
+        ema_col   = f'ema_{ema}'
+        all_cols  = ['ema_20', 'ema_50', 'ema_100', 'ema_200']
+        lower_emas = [] if ema == 20 else [c for c in all_cols if c != ema_col]
+        is_weekly  = timeframe == "weekly"
+        near_pct   = 0.0015
+        slope_bars = 8 if ema <= 50 else 0
+        slope_pct  = 0.0 if ema == 20 else 0.015
 
-        if timeframe == "weekly":
+        if is_weekly:
             touches = find_touch_events(
                 hist, ema_col, 'atr',
                 lower_ema_cols=lower_emas if lower_emas else None,
                 cooldown_bars=2,
                 require_rally_after_negative=True,
-                min_ema_slope_bars=8 if ema <= 50 else 0,
-                min_ema_slope_pct=0.0 if ema == 20 else 0.015,
+                min_ema_slope_bars=slope_bars,
+                min_ema_slope_pct=slope_pct,
             )
         else:
             touches = find_touch_events(
                 hist, ema_col, 'atr',
                 lower_ema_cols=lower_emas if lower_emas else None,
                 cooldown_bars=0,
-                min_ema_slope_pct=0.0 if ema == 20 else 0.015,
+                min_ema_slope_pct=slope_pct,
             )
 
         result = []
@@ -1076,7 +1079,7 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: 
         positive = sum(1 for t in result if t['result'] == 'positive')
         negative = sum(1 for t in result if t['result'] == 'negative')
 
-        return {
+        response = {
             "ticker":    ticker.upper(),
             "ema":       ema_col,
             "timeframe": timeframe,
@@ -1084,6 +1087,66 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: 
             "summary":   {"positive": positive, "negative": negative, "total": len(result)},
             "touches":   result,
         }
+
+        if not debug:
+            return response
+
+        # Режим отладки: проверяем каждый бар и логируем причину пропуска
+        skipped = []
+        touch_dates = {t['date'] for t in result}
+        last_neg_end = -10_000
+
+        for i in range(1, len(hist) - 1):
+            date_str = str(hist.index[i])[:10]
+            if date_str in touch_dates:
+                continue
+
+            try:
+                curr_close = float(hist['Close'].iloc[i])
+                curr_low   = float(hist['Low'].iloc[i])
+                ema_val    = float(hist[ema_col].iloc[i])
+                atr_val    = float(hist['atr'].iloc[i])
+            except Exception:
+                continue
+
+            if pd.isna(ema_val) or pd.isna(atr_val) or atr_val <= 0:
+                continue
+
+            near_from_above = ema_val <= curr_close <= ema_val * (1 + near_pct)
+            actual_touch    = curr_low <= ema_val
+
+            if not (near_from_above or actual_touch):
+                continue  # не в зоне — не логируем, слишком много
+
+            # Бар в зоне касания — выясняем почему пропущен
+            reason = None
+
+            came_from_above = all(
+                float(hist['Close'].iloc[i - k]) > float(hist[ema_col].iloc[i - k])
+                for k in range(1, 4) if i - k >= 0
+            )
+            if not came_from_above:
+                reason = "came_from_above: один из 3 предыдущих баров ниже EMA"
+
+            elif slope_bars > 0 and i >= slope_bars:
+                ema_past = float(hist[ema_col].iloc[i - slope_bars])
+                if ema_past > 0:
+                    sp = (ema_val - ema_past) / ema_past
+                    if sp < slope_pct:
+                        reason = f"slope_filter: EMA выросла только на {sp*100:.2f}% за {slope_bars} баров (мин {slope_pct*100:.1f}%)"
+
+            if reason:
+                skipped.append({
+                    "date":   date_str,
+                    "price":  round(curr_close, 2),
+                    "ema":    round(ema_val, 2),
+                    "atr":    round(atr_val, 2),
+                    "reason": reason,
+                })
+
+        response["skipped"] = skipped
+        return response
+
     except Exception as e:
         return {"error": str(e)}
 
