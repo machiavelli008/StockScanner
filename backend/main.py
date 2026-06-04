@@ -13,6 +13,7 @@ import json
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 import screener as screener_module
+import analyzer as analyzer_module
 
 # Ленивый импорт yfinance - только когда нужен
 def get_yfinance():
@@ -1096,6 +1097,44 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: 
 def get_active_tickers():
     """Возвращает текущий активный список тикеров."""
     return screener_module.load_active_tickers()
+
+
+@app.get("/api/analyze")
+@app.post("/api/analyze")
+def analyze_signals():
+    """Агент: анализирует 10 случайных акций по EMA 20/50/200 daily+weekly, ищет аномалии."""
+    import urllib.request, urllib.parse
+
+    findings = analyzer_module.run_analysis(
+        signals_path=SIGNALS_JSON_PATH,
+        find_touch_fn=find_touch_events,
+        calc_ema_fn=calculate_ema,
+        calc_atr_fn=calculate_atr,
+        normalize_fn=normalize_ohlc_columns,
+        get_yf_fn=get_yfinance,
+    )
+
+    if not findings:
+        return {"status": "ok", "detail": "Аномалий не найдено"}
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+    if bot_token and chat_id:
+        now_str = pd.Timestamp.now("Europe/Moscow").strftime("%b %d, %Y")
+        text = f"🔍 Анализ логики — {now_str}\n\n" + "\n\n".join(findings)
+        if len(text) > 4096:
+            text = text[:4090] + "..."
+        url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+        try:
+            req = urllib.request.Request(url, data=data, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                json.loads(resp.read())
+        except Exception:
+            pass
+
+    return {"status": "ok", "findings": findings}
 
 
 @app.get("/api/telegram/debug")

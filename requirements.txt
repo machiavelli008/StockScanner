@@ -6,4 +6,5 @@ numpy==1.26.4
 python-dotenv==1.0.0
 openpyxl==3.1.2
 python-multipart==0.0.9
+anthropic>=0.40.0
 
