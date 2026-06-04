@@ -96,7 +96,6 @@ def _collect_touches(ticker, ema_period, timeframe, yf,
                 lower_ema_cols=lower if lower else None,
                 cooldown_bars=2,
                 require_rally_after_negative=True,
-                max_bars_below_ema=3 if ema_period <= 50 else None,
                 min_ema_slope_bars=8 if ema_period <= 50 else 0,
                 min_ema_slope_pct=0.01 if ema_period == 20 else 0.015,
             )

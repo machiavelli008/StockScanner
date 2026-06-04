@@ -425,10 +425,7 @@ def find_touch_events(
             else:
                 bars_below_ema = 0
 
-            # Негатив если цена закрылась ниже EMA N баров подряд (только weekly)
-            if max_bars_below_ema and bars_below_ema >= max_bars_below_ema:
-                result = 'negative'
-                break
+
 
             # Positive: Close закрылся выше EMA + 1 ATR (симметрично с негативом — оба по Close).
             # Если во время события LOW касался нижней EMA — позитив не считаем (неясно на что реакция).
@@ -860,7 +857,6 @@ def get_stock_signals(ticker, category='Other'):
                     lower_ema_cols=lower_emas if lower_emas else None,
                     cooldown_bars=2,
                     require_rally_after_negative=True,
-                    max_bars_below_ema=3 if period <= 50 else None,
                     min_ema_slope_bars=8 if period <= 50 else 0,
                     min_ema_slope_pct=0.01 if period == 20 else 0.015,
                 )
@@ -1056,7 +1052,6 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: 
                 lower_ema_cols=lower_emas if lower_emas else None,
                 cooldown_bars=2,
                 require_rally_after_negative=True,
-                max_bars_below_ema=3 if ema <= 50 else None,
                 min_ema_slope_bars=8 if ema <= 50 else 0,
                 min_ema_slope_pct=0.01 if ema == 20 else 0.015,
             )
