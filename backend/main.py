@@ -830,7 +830,7 @@ def get_stock_signals(ticker, category='Other'):
                     'atr',
                     lower_ema_cols=lower_emas if lower_emas else None,
                     cooldown_bars=0,
-                    min_ema_slope_pct=0.01 if period == 20 else 0.015,
+                    min_ema_slope_pct=0.0 if period == 20 else 0.015,
                 )
                 if period == 200:
                     touches = compute_rally_between_touches(touches, period_df, cluster_bars=20)
@@ -858,7 +858,7 @@ def get_stock_signals(ticker, category='Other'):
                     cooldown_bars=2,
                     require_rally_after_negative=True,
                     min_ema_slope_bars=8 if period <= 50 else 0,
-                    min_ema_slope_pct=0.01 if period == 20 else 0.015,
+                    min_ema_slope_pct=0.0 if period == 20 else 0.015,
                 )
                 if period == 200:
                     touches = compute_rally_between_touches(touches, period_df, cluster_bars=26)
@@ -1053,14 +1053,14 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly", years: 
                 cooldown_bars=2,
                 require_rally_after_negative=True,
                 min_ema_slope_bars=8 if ema <= 50 else 0,
-                min_ema_slope_pct=0.01 if ema == 20 else 0.015,
+                min_ema_slope_pct=0.0 if ema == 20 else 0.015,
             )
         else:
             touches = find_touch_events(
                 hist, ema_col, 'atr',
                 lower_ema_cols=lower_emas if lower_emas else None,
                 cooldown_bars=0,
-                min_ema_slope_pct=0.01 if ema == 20 else 0.015,
+                min_ema_slope_pct=0.0 if ema == 20 else 0.015,
             )
 
         result = []
