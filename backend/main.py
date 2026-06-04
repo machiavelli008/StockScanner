@@ -1115,6 +1115,79 @@ def telegram_send_get():
     return _telegram_send_impl()
 
 
+@app.get("/api/telegram/report")
+@app.post("/api/telegram/report")
+def telegram_report():
+    """Фильтрованный отчёт: entry_zone, prob>=65%, восходящий тренд, EMA 20/50/200 + Ready 20 EMA."""
+    import urllib.request, urllib.parse
+
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if not bot_token or not chat_id:
+        return {"status": "error", "detail": "TELEGRAM_BOT_TOKEN или CHAT_ID не заданы"}
+
+    try:
+        with open(SIGNALS_JSON_PATH) as f:
+            data = json.load(f)
+        signals = data.get("signals", data) if isinstance(data, dict) else data
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+    tickers = []
+    for s in signals:
+        ticker = s.get("ticker", "")
+
+        # Ready 20 EMA — без фильтра вероятности
+        if s.get("ready_20ema"):
+            tickers.append(ticker)
+            continue
+
+        ema_d = s.get("current_ema") or {}
+        ema_w = s.get("current_ema_weekly") or {}
+        p1_d  = (s.get("daily")   or {}).get("period_1_5y") or {}
+        p1_w  = (s.get("weekly")  or {}).get("period_1_5y") or {}
+
+        found = False
+        for ema_key in ["ema_20", "ema_50", "ema_200"]:
+            # Daily
+            v = ema_d.get(ema_key, {})
+            if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
+                prob = (p1_d.get(ema_key) or {}).get("probability", 0)
+                if prob >= 65:
+                    found = True
+                    break
+            # Weekly
+            v = ema_w.get(ema_key, {})
+            if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
+                prob = (p1_w.get(ema_key) or {}).get("probability", 0)
+                if prob >= 65:
+                    found = True
+                    break
+
+        if found:
+            tickers.append(ticker)
+
+    if not tickers:
+        return {"status": "ok", "detail": "Нет сигналов по критериям"}
+
+    now_str = pd.Timestamp.now("Europe/Moscow").strftime("%b %d, %Y")
+    text = f"{now_str} filtered\n{', '.join(tickers)}"
+
+    url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    body = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+
+    try:
+        req = urllib.request.Request(url, data=body, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            if result.get("ok"):
+                return {"status": "ok", "tickers": tickers}
+            else:
+                return {"status": "error", "detail": result}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
 @app.post("/api/telegram/send")
 def telegram_send_endpoint():
     """Отправляет сигналы в Telegram и возвращает подробный результат."""
