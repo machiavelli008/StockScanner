@@ -1234,12 +1234,18 @@ def telegram_report():
     for s in signals:
         ticker = s.get("ticker", "")
 
+        ema_d = s.get("current_ema") or {}
+
+        # Фильтр восходящего тренда: цена должна быть выше дневной EMA200
+        ema200_daily = ema_d.get("ema_200", {})
+        if not (isinstance(ema200_daily, dict) and ema200_daily.get("price_above", False)):
+            continue
+
         # Ready 20 EMA — без фильтра вероятности
         if s.get("ready_20ema"):
             tickers.append(ticker)
             continue
 
-        ema_d = s.get("current_ema") or {}
         ema_w = s.get("current_ema_weekly") or {}
         p1_d  = (s.get("daily")   or {}).get("period_1_5y") or {}
         p1_w  = (s.get("weekly")  or {}).get("period_1_5y") or {}
