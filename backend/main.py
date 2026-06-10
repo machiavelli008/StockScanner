@@ -386,7 +386,6 @@ def find_touch_events(
         event_indices = [i]
         candles_in_event = 1
         result = None
-        bars_below_ema = 1 if float(data['Close'].iloc[i]) < float(data[ema_col].iloc[i]) else 0
         touched_lower_ema_during = False
         max_high_seen = curr_high
 
@@ -418,13 +417,6 @@ def find_touch_events(
                     if not pd.isna(lower_val) and lower_val < f_ema and f_low <= lower_val:
                         touched_lower_ema_during = True
                         break
-
-            # Счётчик баров ниже EMA
-            if f_close < f_ema:
-                bars_below_ema += 1
-            else:
-                bars_below_ema = 0
-
 
 
             # Positive: Close закрылся выше EMA + 1 ATR (симметрично с негативом — оба по Close).
@@ -820,16 +812,24 @@ def get_stock_signals(ticker, category='Other'):
         all_ema_cols = [f'ema_{p}' for p in ema_periods]
         for period in ema_periods:
             ema_col = f'ema_{period}'
-            # EMA20: не фильтруем по lower_ema — если low ушёл ниже EMA50,
-            # это негативное касание EMA20 (не удержали), lookahead сам даст negative.
             lower_emas = [] if period == 20 else [col for col in all_ema_cols if col != ema_col]
             for period_name, period_df in daily_periods.items():
+                # Для EMA20/50: считаем статистику только в периоды восходящего тренда
+                # (цена выше EMA200). В нисходящем тренде касания почти всегда негативные
+                # и искажают вероятность вниз.
+                if period < 200 and 'ema_200' in period_df.columns:
+                    stat_df = period_df[period_df['Close'] >= period_df['ema_200']].copy()
+                    if len(stat_df) < 30:
+                        stat_df = period_df  # недостаточно данных — берём всё
+                else:
+                    stat_df = period_df
                 touches = find_touch_events(
-                    period_df,
+                    stat_df,
                     ema_col,
                     'atr',
                     lower_ema_cols=lower_emas if lower_emas else None,
                     cooldown_bars=0,
+                    min_ema_slope_bars=5 if period <= 50 else 0,
                     min_ema_slope_pct=0.0 if period == 20 else 0.015,
                 )
                 if period == 200:
@@ -844,14 +844,21 @@ def get_stock_signals(ticker, category='Other'):
                 f"1-5y {p1['positive']}/{p1['total']}={p1['probability']}%, "
                 f"10y {p2['positive']}/{p2['total']}={p2['probability']}%"
             )
-        
+
         # Анализ Weekly
         for period in ema_periods:
             ema_col = f'ema_{period}'
             lower_emas = [] if period == 20 else [col for col in all_ema_cols if col != ema_col]
             for period_name, period_df in weekly_periods.items():
+                # Для EMA20/50: только периоды выше EMA200 (восходящий тренд)
+                if period < 200 and 'ema_200' in period_df.columns:
+                    stat_df = period_df[period_df['Close'] >= period_df['ema_200']].copy()
+                    if len(stat_df) < 20:
+                        stat_df = period_df
+                else:
+                    stat_df = period_df
                 touches = find_touch_events(
-                    period_df,
+                    stat_df,
                     ema_col,
                     'atr',
                     lower_ema_cols=lower_emas if lower_emas else None,
