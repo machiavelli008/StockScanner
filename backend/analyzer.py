@@ -97,14 +97,14 @@ def _collect_touches(ticker, ema_period, timeframe, yf,
                 cooldown_bars=2,
                 require_rally_after_negative=True,
                 min_ema_slope_bars=8 if ema_period <= 50 else 0,
-                min_ema_slope_pct=0.0 if ema_period == 20 else 0.015,
+                min_ema_slope_pct=0.0 if ema_period == 20 else 0.001,
             )
         else:
             touches = find_touch_fn(
                 hist, ema_col, 'atr',
                 lower_ema_cols=lower if lower else None,
                 cooldown_bars=0,
-                min_ema_slope_pct=0.0 if ema_period == 20 else 0.015,
+                min_ema_slope_pct=0.0 if ema_period == 20 else 0.001,
             )
 
         positive = sum(1 for t in touches if t['result'] == 'positive')
