@@ -715,14 +715,23 @@ def get_stock_signals(ticker, category='Other'):
 
         print(f"Analyzing touches for {ticker}...")
 
+        # EMA20 ниже EMA200 — нисходящий тренд по скользящим, все сигналы отключаем
+        ema20_current  = float(hist_daily['ema_20'].iloc[-1])
+        ema200_current = float(hist_daily['ema_200'].iloc[-1])
+        ema20_below_ema200 = ema20_current < ema200_current
+        if ema20_below_ema200:
+            print(f"  INFO: {ticker} EMA20 ({ema20_current:.2f}) < EMA200 ({ema200_current:.2f}) — downtrend, skipping signals")
+
         # Суперузкий диапазон: акция в tight consolidation — все сигналы отключаем
         tight_range = _is_tight_range(hist_daily)
         if tight_range:
             print(f"  INFO: {ticker} in tight range (<4% over 15 bars) — skipping signals")
 
+        # Фильтр: боковик, tight range или EMA20 < EMA200 — никаких сигналов
+        no_signals = sideways_warning or tight_range or ema20_below_ema200
+
         # Плашки считаются отдельно для дневного и недельного таймфреймов
-        # Если акция в боковике или в tight range — EMA сигналы не показываем
-        if sideways_warning or tight_range:
+        if no_signals:
             current_ema_daily = {}
             current_ema_weekly = {}
         else:
@@ -731,13 +740,13 @@ def get_stock_signals(ticker, category='Other'):
 
         # Паттерн "подхват скользящими": цена между EMA10 и EMA20 минимум 2 бара
         try:
-            is_ready_20ema = False if tight_range else screener_module.screen_ready_20ema(hist_daily)
+            is_ready_20ema = False if no_signals else screener_module.screen_ready_20ema(hist_daily)
         except Exception:
             is_ready_20ema = False
 
         # Паттерн "двойной/тройной удар"
         try:
-            if tight_range:
+            if no_signals:
                 strike_signal = None
             else:
                 strike_daily  = screener_module.screen_double_triple_strike(hist_daily)
@@ -768,7 +777,7 @@ def get_stock_signals(ticker, category='Other'):
             "ema10_weekly":   round(float(hist_weekly['ema_10'].iloc[-1]), 2),
             "last_daily_date":  str(hist_daily.index[-1])[:10],
             "last_weekly_date": str(hist_weekly.index[-1])[:10],
-            "hammer_signal": detect_weekly_hammers(hist_weekly),
+            "hammer_signal": None if no_signals else detect_weekly_hammers(hist_weekly),
             "daily": {
                 "period_1_5y": {},
                 "period_10y": {}
@@ -1843,6 +1852,12 @@ def send_telegram_report():
         ticker = s.get("ticker", "")
         ema_d = s.get("current_ema") or {}
         ema_w = s.get("current_ema_weekly") or {}
+
+        # Фильтр восходящего тренда: цена должна быть выше дневной EMA200
+        ema200_daily = ema_d.get("ema_200", {})
+        if not (isinstance(ema200_daily, dict) and ema200_daily.get("price_above", False)):
+            continue
+
         has_ema = any(
             isinstance(v, dict) and v.get("signal_type") in ("entry_zone", "approaching", "watching")
             for d in (ema_d, ema_w) for k, v in d.items() if k != "ema_100"
