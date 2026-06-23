@@ -920,16 +920,20 @@
             const isEma200 = label.includes('200');
             const rally1 = isEma200 && s1.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s1.avg_rally_pct}%</div>` : '';
             const rally2 = isEma200 && s2.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s2.avg_rally_pct}%</div>` : '';
+            const total1 = (s1.positive || 0) + (s1.negative || 0);
+            const total2 = (s2.positive || 0) + (s2.negative || 0);
+            const prob1 = total1 >= 3 ? `<span class="${getProbColor(s1.probability)}">${s1.probability}%</span>` : `<span class="prob-neutral">—</span>`;
+            const prob2 = total2 >= 3 ? `<span class="${getProbColor(s2.probability)}">${s2.probability}%</span>` : `<span class="prob-neutral">—</span>`;
             return `
                 <tr>
                     <td class="ema-name">${label}${badge}</td>
                     <td class="ema-period">
-                        <span class="${getProbColor(s1.probability)}">${s1.probability}%</span>
+                        ${prob1}
                         <div class="stats">${s1.positive} up | ${s1.negative} down</div>
                         ${rally1}
                     </td>
                     <td class="ema-period">
-                        <span class="${getProbColor(s2.probability)}">${s2.probability}%</span>
+                        ${prob2}
                         <div class="stats">${s2.positive} up | ${s2.negative} down</div>
                         ${rally2}
                     </td>

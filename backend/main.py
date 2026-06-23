@@ -673,6 +673,11 @@ def get_stock_signals(ticker, category='Other'):
         cutoff_10y = hist_daily.index.max() - pd.DateOffset(years=10)
         hist_daily = hist_daily[hist_daily.index > cutoff_10y]
 
+        # Минимум ~1 год торговой истории для достоверного расчёта EMA200
+        if len(hist_daily) < 260:
+            print(f"  INFO: {ticker} insufficient history ({len(hist_daily)} bars, need 260) — skipping")
+            return None
+
         # Weekly — то же самое
         for period in ema_periods:
             hist_weekly[f'ema_{period}'] = calculate_ema(hist_weekly['Close'], period)
