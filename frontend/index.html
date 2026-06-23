@@ -922,8 +922,8 @@
             const rally2 = isEma200 && s2.avg_rally_pct != null ? `<div class="stats avg-rally">avg rally +${s2.avg_rally_pct}%</div>` : '';
             const total1 = (s1.positive || 0) + (s1.negative || 0);
             const total2 = (s2.positive || 0) + (s2.negative || 0);
-            const prob1 = total1 >= 3 ? `<span class="${getProbColor(s1.probability)}">${s1.probability}%</span>` : `<span class="prob-neutral">—</span>`;
-            const prob2 = total2 >= 3 ? `<span class="${getProbColor(s2.probability)}">${s2.probability}%</span>` : `<span class="prob-neutral">—</span>`;
+            const prob1 = total1 >= 2 ? `<span class="${getProbColor(s1.probability)}">${s1.probability}%</span>` : `<span class="prob-neutral">—</span>`;
+            const prob2 = total2 >= 2 ? `<span class="${getProbColor(s2.probability)}">${s2.probability}%</span>` : `<span class="prob-neutral">—</span>`;
             return `
                 <tr>
                     <td class="ema-name">${label}${badge}</td>
