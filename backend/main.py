@@ -161,7 +161,11 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
         ema_val = ema_values[col]
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
-        low_wick_touch = price_above and current_low <= ema_val * (1 + wick_pct / 100)
+        # Wick touch: low пришёл в пределах 1 ATR от EMA (в абсолютных единицах).
+        # Это точнее фиксированного %, т.к. у разных акций разная волатильность.
+        low_wick_touch = price_above and current_low <= ema_val + current_atr
+        # ATR как % от EMA — для динамичного approaching порога
+        atr_pct = current_atr / ema_val * 100
         signal_type = None
 
         prev_closes = [float(hist['Close'].iloc[-i]) for i in range(2, 5)]
@@ -183,7 +187,9 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
         else:
-            if price_above and came_from_above and dist_pct <= approach_pct:
+            # Approaching zone: фиксированный % ИЛИ в пределах 1.5 ATR (для волатильных акций)
+            in_approach = dist_pct <= approach_pct or dist_pct <= atr_pct * 1.5
+            if price_above and came_from_above and in_approach:
                 if dist_pct <= entry_pct or low_wick_touch:
                     signal_type = 'entry_zone'
                 else:
@@ -1506,7 +1512,9 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
 
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
-        low_wick_touch = price_above and current_low <= ema_val * (1 + wick_pct / 100)
+        current_atr_val = stored.get('atr') or 0
+        low_wick_touch = price_above and current_low <= ema_val + current_atr_val
+        atr_pct = current_atr_val / ema_val * 100 if ema_val else 0
         was_above = stored.get('price_above', True)
         signal_type = None
 
@@ -1523,8 +1531,9 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
         else:
+            in_approach = dist_pct <= approach_pct or dist_pct <= atr_pct * 1.5
             if was_above:
-                if price_above and dist_pct <= approach_pct:
+                if price_above and in_approach:
                     if dist_pct <= entry_pct or low_wick_touch:
                         signal_type = 'entry_zone'
                     else:
