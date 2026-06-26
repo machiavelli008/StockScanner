@@ -161,10 +161,8 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
         ema_val = ema_values[col]
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
-        # Wick touch: low пришёл в пределах 1 ATR от EMA (в абсолютных единицах).
-        # Это точнее фиксированного %, т.к. у разных акций разная волатильность.
-        low_wick_touch = price_above and current_low <= ema_val + current_atr
-        # ATR как % от EMA — для динамичного approaching порога
+        low_wick_touch = price_above and current_low <= ema_val * (1 + wick_pct / 100)
+        # ATR% используем ТОЛЬКО для случая когда цена закрылась НИЖЕ EMA
         atr_pct = current_atr / ema_val * 100
         signal_type = None
 
@@ -187,9 +185,7 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
         else:
-            # Approaching zone: фиксированный % ИЛИ в пределах 1.5 ATR (для волатильных акций)
-            in_approach = dist_pct <= approach_pct or dist_pct <= atr_pct * 1.5
-            if price_above and came_from_above and in_approach:
+            if price_above and came_from_above and dist_pct <= approach_pct:
                 if dist_pct <= entry_pct or low_wick_touch:
                     signal_type = 'entry_zone'
                 else:
@@ -206,7 +202,10 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                 lower_emas = [v for k, v in ema_values.items() if v < ema_val]
                 touches_lower = any(current_price <= lv for lv in lower_emas)
                 if not touches_lower:
-                    if dist_pct <= entry_pct:
+                    # Цена закрылась ниже EMA: 1 ATR как порог волатильности.
+                    # ≤ 1 ATR ниже EMA → ещё в зоне → entry_zone
+                    # > 1 ATR ниже EMA → пробила скользящую → watching
+                    if dist_pct <= atr_pct:
                         signal_type = 'entry_zone'
                     elif dist_pct <= approach_pct:
                         signal_type = 'watching'
@@ -1541,10 +1540,12 @@ def compute_fast_ema_signals(current_price, current_low, stored_ema,
                         price_declining = prev_price is None or current_price <= prev_price
                         if price_declining:
                             signal_type = 'approaching'
-                elif not price_above and dist_pct <= approach_pct:
-                    if dist_pct <= entry_pct:
+                elif not price_above:
+                    # ≤ 1 ATR ниже EMA → ещё в зоне → entry_zone
+                    # > 1 ATR ниже EMA → пробила → watching
+                    if dist_pct <= atr_pct:
                         signal_type = 'entry_zone'
-                    else:
+                    elif dist_pct <= approach_pct:
                         signal_type = 'watching'
 
         # EMA20: подавляем если цена упала слишком глубоко (уже у EMA50)
