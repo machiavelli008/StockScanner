@@ -901,9 +901,23 @@ def get_stock_signals(ticker, category='Other'):
                 f"10y {p2['positive']}/{p2['total']}={p2['probability']}%"
             )
         
+        # Понижаем entry_zone → watching если историческая вероятность < 65%
+        # (по периоду 1-5 лет как основному)
+        for ema_key, ema_info in result['current_ema'].items():
+            if ema_info.get('signal_type') == 'entry_zone':
+                prob = (result['daily']['period_1_5y'].get(ema_key) or {}).get('probability', 0)
+                if prob < 65:
+                    result['current_ema'][ema_key]['signal_type'] = 'watching'
+
+        for ema_key, ema_info in result['current_ema_weekly'].items():
+            if ema_info.get('signal_type') == 'entry_zone':
+                prob = (result['weekly']['period_1_5y'].get(ema_key) or {}).get('probability', 0)
+                if prob < 65:
+                    result['current_ema_weekly'][ema_key]['signal_type'] = 'watching'
+
         print(f"OK - {ticker} completed!")
         return result
-        
+
     except Exception as e:
         print(f"Error for {ticker}: {e}")
         import traceback
@@ -1645,6 +1659,18 @@ def fast_scan_signals():
                     cur_price, cur_low, signal['current_ema_weekly'],
                     is_weekly=True, prev_price=prev_price, ema10=ema10_weekly
                 )
+
+            # Понижаем entry_zone → watching если вероятность < 65%
+            daily_p1  = (signal.get('daily')  or {}).get('period_1_5y') or {}
+            weekly_p1 = (signal.get('weekly') or {}).get('period_1_5y') or {}
+            for ema_key, ema_info in (new_signal.get('current_ema') or {}).items():
+                if ema_info.get('signal_type') == 'entry_zone':
+                    if (daily_p1.get(ema_key) or {}).get('probability', 0) < 65:
+                        ema_info['signal_type'] = 'watching'
+            for ema_key, ema_info in (new_signal.get('current_ema_weekly') or {}).items():
+                if ema_info.get('signal_type') == 'entry_zone':
+                    if (weekly_p1.get(ema_key) or {}).get('probability', 0) < 65:
+                        ema_info['signal_type'] = 'watching'
 
             updated.append(new_signal)
         except Exception as e:
