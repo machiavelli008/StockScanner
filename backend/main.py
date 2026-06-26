@@ -720,12 +720,14 @@ def get_stock_signals(ticker, category='Other'):
 
         print(f"Analyzing touches for {ticker}...")
 
-        # EMA20 ниже EMA200 — нисходящий тренд по скользящим, все сигналы отключаем
-        ema20_current  = float(hist_daily['ema_20'].iloc[-1])
-        ema200_current = float(hist_daily['ema_200'].iloc[-1])
-        ema20_below_ema200 = ema20_current < ema200_current
+        # EMA20 ниже EMA200 на недельном — структурный нисходящий тренд, все сигналы отключаем.
+        # Используем недельный таймфрейм: дневная EMA20 может временно упасть ниже EMA200
+        # при коррекции (MSFT), тогда как недельная EMA20 < EMA200 — это настоящий даунтренд (TCOM).
+        ema20_weekly_val  = float(hist_weekly['ema_20'].iloc[-1])
+        ema200_weekly_val = float(hist_weekly['ema_200'].iloc[-1])
+        ema20_below_ema200 = ema20_weekly_val < ema200_weekly_val
         if ema20_below_ema200:
-            print(f"  INFO: {ticker} EMA20 ({ema20_current:.2f}) < EMA200 ({ema200_current:.2f}) — downtrend, skipping signals")
+            print(f"  INFO: {ticker} weekly EMA20 ({ema20_weekly_val:.2f}) < EMA200 ({ema200_weekly_val:.2f}) — structural downtrend, skipping signals")
 
         # Суперузкий диапазон: акция в tight consolidation — все сигналы отключаем
         tight_range = _is_tight_range(hist_daily)
@@ -1256,18 +1258,20 @@ def telegram_report():
         ticker = s.get("ticker", "")
 
         ema_d = s.get("current_ema") or {}
+        ema_w = s.get("current_ema_weekly") or {}
 
-        # Фильтр восходящего тренда: цена должна быть выше дневной EMA200
-        ema200_daily = ema_d.get("ema_200", {})
-        if not (isinstance(ema200_daily, dict) and ema200_daily.get("price_above", False)):
+        # Фильтр восходящего тренда: цена выше EMA200 хотя бы на одном таймфрейме (daily или weekly).
+        # Требуем daily ИЛИ weekly, т.к. при коррекции цена может временно уйти ниже дневной EMA200
+        # (MSFT при пулбэке к недельной EMA200), но недельная EMA200 остаётся поддержкой.
+        ema200_d_above = isinstance(ema_d.get("ema_200"), dict) and ema_d["ema_200"].get("price_above", False)
+        ema200_w_above = isinstance(ema_w.get("ema_200"), dict) and ema_w["ema_200"].get("price_above", False)
+        if not (ema200_d_above or ema200_w_above):
             continue
 
         # Ready 20 EMA — без фильтра вероятности
         if s.get("ready_20ema"):
             tickers.append(ticker)
             continue
-
-        ema_w = s.get("current_ema_weekly") or {}
         p1_d  = (s.get("daily")   or {}).get("period_1_5y") or {}
         p1_w  = (s.get("weekly")  or {}).get("period_1_5y") or {}
 
@@ -1858,9 +1862,10 @@ def send_telegram_report():
         ema_d = s.get("current_ema") or {}
         ema_w = s.get("current_ema_weekly") or {}
 
-        # Фильтр восходящего тренда: цена должна быть выше дневной EMA200
-        ema200_daily = ema_d.get("ema_200", {})
-        if not (isinstance(ema200_daily, dict) and ema200_daily.get("price_above", False)):
+        # Фильтр восходящего тренда: цена выше EMA200 хотя бы на одном таймфрейме
+        ema200_d_above = isinstance(ema_d.get("ema_200"), dict) and ema_d["ema_200"].get("price_above", False)
+        ema200_w_above = isinstance(ema_w.get("ema_200"), dict) and ema_w["ema_200"].get("price_above", False)
+        if not (ema200_d_above or ema200_w_above):
             continue
 
         has_ema = any(
