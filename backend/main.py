@@ -1641,22 +1641,33 @@ def fast_scan_signals():
 
             cur_price  = float(ticker_data['Close'].iloc[-1])
             cur_low    = float(ticker_data['Low'].iloc[-1])
-            prev_price = float(ticker_data['Close'].iloc[-2]) if len(ticker_data) >= 2 else None
+
+            # Для определения сигнала используем только закрытые свечи.
+            # iloc[-1] — текущая незакрытая свеча (intraday), iloc[-2] — последняя закрытая.
+            # Отображаем cur_price, но решения принимаем по closed_price.
+            if len(ticker_data) >= 2:
+                closed_price = float(ticker_data['Close'].iloc[-2])
+                closed_low   = float(ticker_data['Low'].iloc[-2])
+                prev_price   = float(ticker_data['Close'].iloc[-3]) if len(ticker_data) >= 3 else None
+            else:
+                closed_price = cur_price
+                closed_low   = cur_low
+                prev_price   = None
 
             ema10_daily   = signal.get('ema10_daily')
             ema10_weekly  = signal.get('ema10_weekly')
 
             new_signal = dict(signal)
-            new_signal['current_price'] = round(cur_price, 2)
+            new_signal['current_price'] = round(cur_price, 2)  # отображение текущей цены
 
             if signal.get('current_ema'):
                 new_signal['current_ema'] = compute_fast_ema_signals(
-                    cur_price, cur_low, signal['current_ema'],
+                    closed_price, closed_low, signal['current_ema'],
                     is_weekly=False, prev_price=prev_price, ema10=ema10_daily
                 )
             if signal.get('current_ema_weekly'):
                 new_signal['current_ema_weekly'] = compute_fast_ema_signals(
-                    cur_price, cur_low, signal['current_ema_weekly'],
+                    closed_price, closed_low, signal['current_ema_weekly'],
                     is_weekly=True, prev_price=prev_price, ema10=ema10_weekly
                 )
 
