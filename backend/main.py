@@ -140,20 +140,10 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
     # EMA10 нужна только для логики EMA20: верхняя граница зоны входа
     ema10_val = float(hist['ema_10'].iloc[-1]) if 'ema_10' in hist.columns else None
 
-    # Глобальный фильтр тренда: цена ниже 200 EMA = нисходящий тренд, сигналы не даём
+    # Если цена ниже EMA200 — не даём сигналы для EMA20/50/100.
+    # Для EMA200 логика работает в штатном режиме (именно там вход при коррекции).
     ema_200_val = ema_values.get('ema_200')
-    if ema_200_val and current_price < ema_200_val:
-        return {
-            f'ema_{p}': {
-                'value': round(ema_values[f'ema_{p}'], 2),
-                'atr': round(current_atr, 2),
-                'distance_pct': round(abs(current_price - ema_values[f'ema_{p}']) / ema_values[f'ema_{p}'] * 100, 2),
-                'price_above': current_price >= ema_values[f'ema_{p}'],
-                'signal_type': None,
-                'wick_touch': False,
-            }
-            for p in ema_periods
-        }
+    price_below_ema200 = bool(ema_200_val and current_price < ema_200_val)
 
     result = {}
     for period in ema_periods:
@@ -161,6 +151,19 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
         ema_val = ema_values[col]
         dist_pct = round(abs(current_price - ema_val) / ema_val * 100, 2)
         price_above = current_price >= ema_val
+
+        # Цена ниже EMA200: сигналы для EMA20/50/100 не даём — только EMA200 обрабатываем
+        if price_below_ema200 and period != 200:
+            result[col] = {
+                'value': round(ema_val, 2),
+                'atr': round(current_atr, 2),
+                'distance_pct': dist_pct,
+                'price_above': price_above,
+                'signal_type': None,
+                'wick_touch': False,
+            }
+            continue
+
         low_wick_touch = price_above and current_low <= ema_val * (1 + wick_pct / 100)
         # ATR% используем ТОЛЬКО для случая когда цена закрылась НИЖЕ EMA
         atr_pct = current_atr / ema_val * 100
@@ -739,15 +742,21 @@ def get_stock_signals(ticker, category='Other'):
         if tight_range:
             print(f"  INFO: {ticker} in tight range (<4% over 15 bars) — skipping signals")
 
-        # Фильтр: боковик, tight range или EMA20 < EMA200 — никаких сигналов
+        # Фильтр: боковик, tight range или EMA20 < EMA200 — никаких сигналов для EMA20/50/100
         no_signals = sideways_warning or tight_range or ema20_below_ema200
+        # Для EMA200 weekly: sideways_warning не блокирует — EMA200 структурный уровень,
+        # не зависит от краткосрочного боковика. Блокируем только при tight_range или ema20_below_ema200.
+        no_ema200_weekly = tight_range or ema20_below_ema200
 
         # Плашки считаются отдельно для дневного и недельного таймфреймов
         if no_signals:
             current_ema_daily = {}
-            current_ema_weekly = {}
         else:
             current_ema_daily   = compute_current_ema_signals(hist_daily,   current_price, ema_periods, is_weekly=False)
+
+        if no_ema200_weekly:
+            current_ema_weekly = {}
+        else:
             current_ema_weekly  = compute_current_ema_signals(hist_weekly,  current_price, ema_periods, is_weekly=True)
 
         # Паттерн "подхват скользящими": цена между EMA10 и EMA20 минимум 2 бара
