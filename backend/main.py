@@ -187,6 +187,27 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                     signal_type = 'entry_zone'
                 elif dist_pct <= 2.0:
                     signal_type = 'watching'
+        elif period == 200:
+            # EMA200: стратегическая скользящая, came_from_above не проверяем.
+            # Зона: цена подходит сверху вниз к EMA200 ИЛИ пробила вниз не более 1 ATR.
+            # Структурный даунтренд отсекается фильтрами ниже (30 баров + EMA50 < EMA200).
+            if price_above:
+                # Пуллбэк сверху вниз к EMA200
+                if dist_pct <= entry_pct or low_wick_touch:
+                    signal_type = 'entry_zone'
+                elif dist_pct <= approach_pct:
+                    lookback = 2 if is_weekly else 1
+                    if len(hist) > lookback + 1:
+                        prev_close = float(hist['Close'].iloc[-(lookback + 1)])
+                        price_declining = current_price < prev_close
+                    else:
+                        price_declining = True
+                    if price_declining:
+                        signal_type = 'approaching'
+            else:
+                # Цена пробила EMA200 вниз: сигнал только если в пределах 1 ATR
+                if dist_pct <= atr_pct:
+                    signal_type = 'entry_zone'
         else:
             if price_above and came_from_above and dist_pct <= approach_pct:
                 if dist_pct <= entry_pct or low_wick_touch:
@@ -919,6 +940,8 @@ def get_stock_signals(ticker, category='Other'):
                     result['current_ema'][ema_key]['signal_type'] = 'watching'
 
         for ema_key, ema_info in result['current_ema_weekly'].items():
+            if ema_key == 'ema_200':
+                continue  # Weekly EMA200: каждое касание важно, вероятность не проверяем
             if ema_info.get('signal_type') == 'entry_zone':
                 prob = (result['weekly']['period_1_5y'].get(ema_key) or {}).get('probability', 0)
                 if prob < 65:
@@ -1315,6 +1338,9 @@ def telegram_report():
             # Weekly
             v = ema_w.get(ema_key, {})
             if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
+                if ema_key == "ema_200":
+                    found = True  # Weekly EMA200: всегда включаем, без проверки вероятности
+                    break
                 prob = (p1_w.get(ema_key) or {}).get("probability", 0)
                 if prob >= 65:
                     found = True
@@ -1688,6 +1714,8 @@ def fast_scan_signals():
                     if (daily_p1.get(ema_key) or {}).get('probability', 0) < 65:
                         ema_info['signal_type'] = 'watching'
             for ema_key, ema_info in (new_signal.get('current_ema_weekly') or {}).items():
+                if ema_key == 'ema_200':
+                    continue  # Weekly EMA200: каждое касание важно, вероятность не проверяем
                 if ema_info.get('signal_type') == 'entry_zone':
                     if (weekly_p1.get(ema_key) or {}).get('probability', 0) < 65:
                         ema_info['signal_type'] = 'watching'
