@@ -1064,6 +1064,8 @@ def get_signals():
         })
 
 @app.post("/api/refresh")
+@app.get("/api/refresh")
+@app.get("/api/incremental")
 def refresh_signals_endpoint():
     """Запускает инкрементальное обновление EMA в фоне и сразу возвращает ответ."""
     thread = threading.Thread(target=incremental_update, daemon=True)
