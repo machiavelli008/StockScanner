@@ -112,17 +112,27 @@ def _is_hammer(high, low, open_, close) -> bool:
 def screen_ready_20ema(hist: pd.DataFrame) -> bool:
     """
     Цена между EMA10 и EMA20 минимум 2 свечи подряд.
-    Выше 50 EMA и 200 EMA. Нет закрытия ниже EMA20 более чем на 2%.
+    Выше 50 EMA и 200 EMA. EMA20 выше EMA50. Расстояние от EMA20 не более 1 ATR.
     """
     if len(hist) < 5:
         return False
     cur  = float(hist['Close'].iloc[-1])
     e10c = float(hist['ema_10'].iloc[-1])
-    if cur < float(hist['ema_50'].iloc[-1]) or cur < float(hist['ema_200'].iloc[-1]):
+    e20c = float(hist['ema_20'].iloc[-1])
+    e50c = float(hist['ema_50'].iloc[-1])
+    if cur < e50c or cur < float(hist['ema_200'].iloc[-1]):
+        return False
+    # EMA20 ниже EMA50 — тренд не восходящий, подхват не актуален (NEE и подобные)
+    if e20c < e50c:
         return False
     # Цена уже ушла выше EMA10 более чем на 0.5% — сигнал устарел, точки входа нет
     if cur > e10c * 1.005:
         return False
+    # Цена дальше 1 ATR от EMA20 — слишком далеко для подхвата
+    if 'atr' in hist.columns and e20c > 0:
+        atr = float(hist['atr'].iloc[-1])
+        if abs(cur - e20c) > atr:
+            return False
 
     consecutive = 0
     for i in range(-1, -8, -1):

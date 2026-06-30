@@ -222,17 +222,7 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
                         price_declining = True
                     if price_declining:
                         signal_type = 'approaching'
-            elif not price_above and came_from_above:
-                lower_emas = [v for k, v in ema_values.items() if v < ema_val]
-                touches_lower = any(current_price <= lv for lv in lower_emas)
-                if not touches_lower:
-                    # Цена закрылась ниже EMA: 1 ATR как порог волатильности.
-                    # ≤ 1 ATR ниже EMA → ещё в зоне → entry_zone
-                    # > 1 ATR ниже EMA → пробила скользящую → watching
-                    if dist_pct <= atr_pct:
-                        signal_type = 'entry_zone'
-                    elif dist_pct <= approach_pct:
-                        signal_type = 'watching'
+            # EMA50/100: цена пробила вниз — сигнала нет. ATR-зона только для EMA200.
 
         # EMA20: только в восходящем тренде — EMA20 и EMA50 обе должны расти
         if period == 20 and signal_type is not None and len(hist) > 20:
@@ -763,10 +753,28 @@ def get_stock_signals(ticker, category='Other'):
         if tight_range:
             print(f"  INFO: {ticker} in tight range (<4% over 15 bars) — skipping signals")
 
-        # Фильтр: боковик, tight range или EMA20 < EMA200 — никаких сигналов для EMA20/50/100
-        no_signals = sideways_warning or tight_range or ema20_below_ema200
-        # Для EMA200 weekly: sideways_warning не блокирует — EMA200 структурный уровень,
-        # не зависит от краткосрочного боковика. Блокируем только при tight_range или ema20_below_ema200.
+        # Daily EMA20 < Daily EMA200 — блокируем только дневные сигналы (не недельные).
+        # Дневная EMA20 может временно падать ниже EMA200 при коррекции у здоровых акций.
+        ema20_daily_val  = float(hist_daily['ema_20'].iloc[-1])
+        ema200_daily_val = float(hist_daily['ema_200'].iloc[-1])
+        ema20_below_ema200_daily = ema20_daily_val < ema200_daily_val
+        if ema20_below_ema200_daily:
+            print(f"  INFO: {ticker} daily EMA20 ({ema20_daily_val:.2f}) < EMA200 ({ema200_daily_val:.2f}) — skipping daily signals")
+
+        # Боковик на дневном: если цена 2 месяца назад (42 бара) отличается менее чем на 3% — боковик.
+        daily_sideways = False
+        if len(hist_daily) >= 43:
+            price_2m_ago = float(hist_daily['Close'].iloc[-43])
+            if price_2m_ago > 0:
+                pct_change_2m = abs(current_price - price_2m_ago) / price_2m_ago * 100
+                if pct_change_2m < 3.0:
+                    daily_sideways = True
+                    print(f"  INFO: {ticker} daily sideways (2m change {pct_change_2m:.1f}% < 3%) — skipping daily signals")
+
+        # Фильтр дневных сигналов: боковик, tight range, EMA20 < EMA200 (недельный или дневной)
+        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or daily_sideways
+        # Для EMA200 weekly: sideways_warning не блокирует — EMA200 структурный уровень.
+        # Блокируем только при tight_range или ema20_below_ema200 (недельный).
         no_ema200_weekly = tight_range or ema20_below_ema200
 
         # Плашки считаются отдельно для дневного и недельного таймфреймов
