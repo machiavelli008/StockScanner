@@ -785,6 +785,9 @@ def get_stock_signals(ticker, category='Other'):
 
         if no_ema200_weekly:
             current_ema_weekly = {}
+        elif sideways_warning:
+            # Боковик: только EMA200 weekly (стратегический уровень), EMA20/50/100 не показываем
+            current_ema_weekly = compute_current_ema_signals(hist_weekly, current_price, [200], is_weekly=True)
         else:
             current_ema_weekly  = compute_current_ema_signals(hist_weekly,  current_price, ema_periods, is_weekly=True)
 
