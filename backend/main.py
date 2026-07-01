@@ -646,8 +646,8 @@ def get_stock_signals(ticker, category='Other'):
         
         yf = get_yfinance()
         # Скачиваем 15 лет для точного расчёта EMA200, анализируем последние 10
-        hist_daily = yf.download(ticker, period="15y", interval="1d", progress=False, auto_adjust=False)
-        hist_weekly = yf.download(ticker, period="15y", interval="1wk", progress=False, auto_adjust=False)
+        hist_daily = yf.download(ticker, period="15y", interval="1d", progress=False, auto_adjust=True)
+        hist_weekly = yf.download(ticker, period="15y", interval="1wk", progress=False, auto_adjust=True)
 
         hist_daily = normalize_ohlc_columns(hist_daily)
         hist_weekly = normalize_ohlc_columns(hist_weekly)
@@ -1114,7 +1114,7 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly",
         yf = get_yfinance()
         hist = yf.download(ticker.upper(), period="15y",
                            interval="1wk" if timeframe == "weekly" else "1d",
-                           progress=False, auto_adjust=False)
+                           progress=False, auto_adjust=True)
         hist = normalize_ohlc_columns(hist)
         if hist.empty:
             return {"error": f"No data for {ticker}"}
@@ -1669,7 +1669,7 @@ def fast_scan_signals():
             period="5d",
             interval="1d",
             progress=False,
-            auto_adjust=False,
+            auto_adjust=True,
         )
     except Exception as e:
         print(f"[FAST-SCAN] Batch download failed: {e}")
@@ -1859,8 +1859,8 @@ def incremental_update():
 
     print(f"[INCREMENTAL] Batch downloading {len(tickers)} tickers (10d daily + 1mo weekly)...")
     try:
-        batch_daily  = yf.download(tickers, period="10d", interval="1d",  progress=False, auto_adjust=False)
-        batch_weekly = yf.download(tickers, period="1mo", interval="1wk", progress=False, auto_adjust=False)
+        batch_daily  = yf.download(tickers, period="10d", interval="1d",  progress=False, auto_adjust=True)
+        batch_weekly = yf.download(tickers, period="1mo", interval="1wk", progress=False, auto_adjust=True)
     except Exception as e:
         print(f"[INCREMENTAL] Download failed: {e}")
         return
