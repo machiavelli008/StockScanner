@@ -782,8 +782,19 @@ def get_stock_signals(ticker, category='Other'):
                     three_month_flat = True
                     print(f"  INFO: {ticker} no growth 3m (change {pct_change_3m:.1f}% < 3%) — skipping all signals")
 
+        # Пила: если цена пересекала дневную EMA200 более 4 раз за 3 года — нестабильный тренд
+        ema200_saw_daily = False
+        lookback_3y = min(750, len(hist_daily) - 1)
+        if lookback_3y > 10 and 'ema_200' in hist_daily.columns:
+            h3y = hist_daily.iloc[-lookback_3y:]
+            above = h3y['Close'] >= h3y['ema_200']
+            crossings = int((above != above.shift(1)).sum()) - 1
+            if crossings > 4:
+                ema200_saw_daily = True
+                print(f"  INFO: {ticker} daily EMA200 crossed {crossings}x in 3y — saw pattern, skipping daily signals")
+
         # Фильтр дневных сигналов: боковик, tight range, EMA20 < EMA200 (недельный или дневной)
-        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or daily_sideways or three_month_flat
+        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or daily_sideways or three_month_flat or ema200_saw_daily
         # Для EMA200 weekly: блокируем при структурном даунтренде, tight_range, 3 месяца без роста,
         # или долгосрочном падении >70% за 5 лет (downtrend_warning).
         no_ema200_weekly = tight_range or ema20_below_ema200 or three_month_flat or bool(downtrend_warning)
