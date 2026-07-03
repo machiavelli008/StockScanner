@@ -1313,7 +1313,7 @@ def telegram_send_get():
 @app.get("/api/telegram/report")
 @app.post("/api/telegram/report")
 def telegram_report():
-    """Фильтрованный отчёт: entry_zone, prob>=65%, восходящий тренд, EMA 20/50/200 + Ready 20 EMA."""
+    """Отчёт разделён на дневные и недельные сигналы. EMA200 weekly без проверки вероятности."""
     import urllib.request, urllib.parse
 
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -1328,70 +1328,87 @@ def telegram_report():
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
-    tickers = []
+    daily_lines  = []
+    weekly_lines = []
+
     for s in signals:
         ticker = s.get("ticker", "")
+        ema_d  = s.get("current_ema") or {}
+        ema_w  = s.get("current_ema_weekly") or {}
+        p1_d   = (s.get("daily")  or {}).get("period_1_5y") or {}
+        p1_w   = (s.get("weekly") or {}).get("period_1_5y") or {}
 
-        ema_d = s.get("current_ema") or {}
-        ema_w = s.get("current_ema_weekly") or {}
-
-        # Фильтр восходящего тренда: цена выше EMA200 хотя бы на одном таймфрейме (daily или weekly).
-        # Требуем daily ИЛИ weekly, т.к. при коррекции цена может временно уйти ниже дневной EMA200
-        # (MSFT при пулбэке к недельной EMA200), но недельная EMA200 остаётся поддержкой.
-        ema200_d_above = isinstance(ema_d.get("ema_200"), dict) and ema_d["ema_200"].get("price_above", False)
-        ema200_w_above = isinstance(ema_w.get("ema_200"), dict) and ema_w["ema_200"].get("price_above", False)
-        if not (ema200_d_above or ema200_w_above):
+        # Фильтр тренда: цена выше EMA200 на дневном или недельном,
+        # или цена в зоне 1 ATR ниже недельной EMA200 (entry_zone при коррекции, как MSFT/ORCL).
+        ema200_d_above  = isinstance(ema_d.get("ema_200"), dict) and ema_d["ema_200"].get("price_above", False)
+        ema200_w_above  = isinstance(ema_w.get("ema_200"), dict) and ema_w["ema_200"].get("price_above", False)
+        ema200_w_entry  = isinstance(ema_w.get("ema_200"), dict) and ema_w["ema_200"].get("signal_type") == "entry_zone"
+        if not (ema200_d_above or ema200_w_above or ema200_w_entry):
             continue
 
-        # Ready 20 EMA — без фильтра вероятности
+        # ── Дневные сигналы ──────────────────────────────────────────────────
+        day_parts = []
         if s.get("ready_20ema"):
-            tickers.append(ticker)
-            continue
-        p1_d  = (s.get("daily")   or {}).get("period_1_5y") or {}
-        p1_w  = (s.get("weekly")  or {}).get("period_1_5y") or {}
-
-        found = False
+            day_parts.append("Ready EMA20")
         for ema_key in ["ema_20", "ema_50", "ema_200"]:
-            # Daily
             v = ema_d.get(ema_key, {})
             if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
                 prob = (p1_d.get(ema_key) or {}).get("probability", 0)
                 if prob >= 65:
-                    found = True
-                    break
-            # Weekly
+                    num = ema_key.replace("ema_", "")
+                    day_parts.append(f"EMA{num} {prob}%")
+        if day_parts:
+            daily_lines.append(f"{ticker} ({', '.join(day_parts)})")
+
+        # ── Недельные сигналы ────────────────────────────────────────────────
+        week_parts = []
+        for ema_key in ["ema_20", "ema_50", "ema_100", "ema_200"]:
             v = ema_w.get(ema_key, {})
             if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
+                num = ema_key.replace("ema_", "")
                 if ema_key == "ema_200":
-                    found = True  # Weekly EMA200: всегда включаем, без проверки вероятности
-                    break
-                prob = (p1_w.get(ema_key) or {}).get("probability", 0)
-                if prob >= 65:
-                    found = True
-                    break
+                    week_parts.append(f"EMA{num}")  # без проверки вероятности
+                else:
+                    prob = (p1_w.get(ema_key) or {}).get("probability", 0)
+                    if prob >= 65:
+                        week_parts.append(f"EMA{num} {prob}%")
+        if week_parts:
+            weekly_lines.append(f"{ticker} ({', '.join(week_parts)})")
 
-        if found:
-            tickers.append(ticker)
-
-    if not tickers:
+    if not daily_lines and not weekly_lines:
         return {"status": "ok", "detail": "Нет сигналов по критериям"}
 
-    now_str = pd.Timestamp.now("Europe/Moscow").strftime("%b %d, %Y")
-    text = f"{now_str} filtered\n{', '.join(tickers)}"
+    def send_msg(text):
+        url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        body = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+        req  = urllib.request.Request(url, data=body, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
 
-    url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    body = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
+    now_str = pd.Timestamp.now("Europe/Moscow").strftime("%b %d, %Y")
+    errors  = []
 
     try:
-        req = urllib.request.Request(url, data=body, method="POST")
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read())
-            if result.get("ok"):
-                return {"status": "ok", "tickers": tickers}
-            else:
-                return {"status": "error", "detail": result}
+        if daily_lines:
+            text = f"📊 Дневные сигналы — {now_str}\n\n" + "\n".join(daily_lines)
+            if len(text) > 4096:
+                text = text[:4090] + "..."
+            send_msg(text)
+
+        if weekly_lines:
+            text = f"📈 Недельные сигналы — {now_str}\n\n" + "\n".join(weekly_lines)
+            if len(text) > 4096:
+                text = text[:4090] + "..."
+            send_msg(text)
     except Exception as e:
-        return {"status": "error", "detail": str(e)}
+        errors.append(str(e))
+
+    return {
+        "status": "ok" if not errors else "partial",
+        "daily":  daily_lines,
+        "weekly": weekly_lines,
+        "errors": errors,
+    }
 
 
 @app.post("/api/telegram/send")
