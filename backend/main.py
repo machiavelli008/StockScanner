@@ -1347,33 +1347,32 @@ def telegram_report():
             continue
 
         # ── Дневные сигналы ──────────────────────────────────────────────────
-        day_parts = []
-        if s.get("ready_20ema"):
-            day_parts.append("Ready EMA20")
-        for ema_key in ["ema_20", "ema_50", "ema_200"]:
-            v = ema_d.get(ema_key, {})
-            if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
-                prob = (p1_d.get(ema_key) or {}).get("probability", 0)
-                if prob >= 65:
-                    num = ema_key.replace("ema_", "")
-                    day_parts.append(f"EMA{num} {prob}%")
-        if day_parts:
-            daily_lines.append(f"{ticker} ({', '.join(day_parts)})")
+        has_daily = s.get("ready_20ema")
+        if not has_daily:
+            for ema_key in ["ema_20", "ema_50", "ema_200"]:
+                v = ema_d.get(ema_key, {})
+                if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
+                    prob = (p1_d.get(ema_key) or {}).get("probability", 0)
+                    if prob >= 65:
+                        has_daily = True
+                        break
+        if has_daily:
+            daily_lines.append(ticker)
 
         # ── Недельные сигналы ────────────────────────────────────────────────
-        week_parts = []
+        has_weekly = False
         for ema_key in ["ema_20", "ema_50", "ema_100", "ema_200"]:
             v = ema_w.get(ema_key, {})
             if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
-                num = ema_key.replace("ema_", "")
                 if ema_key == "ema_200":
-                    week_parts.append(f"EMA{num}")  # без проверки вероятности
-                else:
-                    prob = (p1_w.get(ema_key) or {}).get("probability", 0)
-                    if prob >= 65:
-                        week_parts.append(f"EMA{num} {prob}%")
-        if week_parts:
-            weekly_lines.append(f"{ticker} ({', '.join(week_parts)})")
+                    has_weekly = True
+                    break
+                prob = (p1_w.get(ema_key) or {}).get("probability", 0)
+                if prob >= 65:
+                    has_weekly = True
+                    break
+        if has_weekly:
+            weekly_lines.append(ticker)
 
     if not daily_lines and not weekly_lines:
         return {"status": "ok", "detail": "Нет сигналов по критериям"}
@@ -1390,13 +1389,13 @@ def telegram_report():
 
     try:
         if daily_lines:
-            text = f"📊 Дневные сигналы — {now_str}\n\n" + "\n".join(daily_lines)
+            text = f"📊 Дневные сигналы — {now_str}\n\n" + ", ".join(daily_lines)
             if len(text) > 4096:
                 text = text[:4090] + "..."
             send_msg(text)
 
         if weekly_lines:
-            text = f"📈 Недельные сигналы — {now_str}\n\n" + "\n".join(weekly_lines)
+            text = f"📈 Недельные сигналы — {now_str}\n\n" + ", ".join(weekly_lines)
             if len(text) > 4096:
                 text = text[:4090] + "..."
             send_msg(text)
