@@ -645,9 +645,10 @@ def get_stock_signals(ticker, category='Other'):
         print(f"\nDownloading data for {ticker}...")
         
         yf = get_yfinance()
-        # Скачиваем 15 лет для точного расчёта EMA200, анализируем последние 10
-        hist_daily = yf.download(ticker, period="15y", interval="1d", progress=False, auto_adjust=False)
-        hist_weekly = yf.download(ticker, period="15y", interval="1wk", progress=False, auto_adjust=False)
+        # Скачиваем всю доступную историю для точного расчёта EMA200 (совпадение с TradingView).
+        # EMA200 на недельном конвергирует точнее при большей истории (EXR торгуется с 2004г.).
+        hist_daily = yf.download(ticker, period="max", interval="1d", progress=False, auto_adjust=False)
+        hist_weekly = yf.download(ticker, period="max", interval="1wk", progress=False, auto_adjust=False)
 
         hist_daily = normalize_ohlc_columns(hist_daily)
         hist_weekly = normalize_ohlc_columns(hist_weekly)
