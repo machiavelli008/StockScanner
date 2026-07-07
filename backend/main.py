@@ -782,16 +782,18 @@ def get_stock_signals(ticker, category='Other'):
                     three_month_flat = True
                     print(f"  INFO: {ticker} no growth 3m (change {pct_change_3m:.1f}% < 3%) — skipping all signals")
 
-        # Пила: если цена пересекала дневную EMA200 более 4 раз за 3 года — нестабильный тренд
+        # Пила: если цена пересекала дневную EMA200 более 3 раз за 1 год — нестабильный тренд.
+        # 1 год (250 баров): здоровая акция пересекает EMA200 0-2 раза (одна коррекция).
+        # Пила типа FSLR: пересекает 4+ раз за год (многократные циклы).
         ema200_saw_daily = False
-        lookback_3y = min(750, len(hist_daily) - 1)
-        if lookback_3y > 10 and 'ema_200' in hist_daily.columns:
-            h3y = hist_daily.iloc[-lookback_3y:]
-            above = h3y['Close'] >= h3y['ema_200']
+        lookback_1y = min(250, len(hist_daily) - 1)
+        if lookback_1y > 10 and 'ema_200' in hist_daily.columns:
+            h1y = hist_daily.iloc[-lookback_1y:]
+            above = h1y['Close'] >= h1y['ema_200']
             crossings = int((above != above.shift(1)).sum()) - 1
-            if crossings > 4:
+            if crossings > 3:
                 ema200_saw_daily = True
-                print(f"  INFO: {ticker} daily EMA200 crossed {crossings}x in 3y — saw pattern, skipping daily signals")
+                print(f"  INFO: {ticker} daily EMA200 crossed {crossings}x in 1y — saw pattern, skipping signals")
 
         # Фильтр дневных сигналов: боковик, tight range, EMA20 < EMA200 (недельный или дневной)
         no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or daily_sideways or three_month_flat or ema200_saw_daily
