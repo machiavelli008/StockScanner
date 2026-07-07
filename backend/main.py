@@ -788,7 +788,7 @@ def get_stock_signals(ticker, category='Other'):
         no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or daily_sideways or three_month_flat or ema200_saw_daily
         # Для EMA200 weekly: блокируем при структурном даунтренде, tight_range, 3 месяца без роста,
         # или долгосрочном падении >70% за 5 лет (downtrend_warning).
-        no_ema200_weekly = tight_range or ema20_below_ema200 or three_month_flat or bool(downtrend_warning) or ema200_saw_daily
+        no_ema200_weekly = tight_range or ema20_below_ema200 or bool(downtrend_warning) or ema200_saw_daily
 
         # Плашки считаются отдельно для дневного и недельного таймфреймов
         if no_signals:
