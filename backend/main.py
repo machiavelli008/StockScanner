@@ -744,10 +744,27 @@ def get_stock_signals(ticker, category='Other'):
         # Используем недельный таймфрейм: дневная EMA20 может временно упасть ниже EMA200
         # при коррекции (MSFT), тогда как недельная EMA20 < EMA200 — это настоящий даунтренд (TCOM).
         ema20_weekly_val  = float(hist_weekly['ema_20'].iloc[-1])
+        ema50_weekly_val  = float(hist_weekly['ema_50'].iloc[-1])
+        ema100_weekly_val = float(hist_weekly['ema_100'].iloc[-1])
+        ema150_weekly_val = float(hist_weekly['ema_150'].iloc[-1])
         ema200_weekly_val = float(hist_weekly['ema_200'].iloc[-1])
         ema20_below_ema200 = ema20_weekly_val < ema200_weekly_val
         if ema20_below_ema200:
             print(f"  INFO: {ticker} weekly EMA20 ({ema20_weekly_val:.2f}) < EMA200 ({ema200_weekly_val:.2f}) — structural downtrend, skipping signals")
+
+        # Недельный EMA200 сигнал только если EMA200 ниже всех остальных (20, 50, 100, 150).
+        # Если хоть одна короткая EMA ниже EMA200 — структура не бычья (LUMN-фильтр).
+        weekly_ema200_not_lowest = (
+            ema20_weekly_val  < ema200_weekly_val or
+            ema50_weekly_val  < ema200_weekly_val or
+            ema100_weekly_val < ema200_weekly_val or
+            ema150_weekly_val < ema200_weekly_val
+        )
+        if weekly_ema200_not_lowest:
+            print(f"  INFO: {ticker} weekly EMA200 not lowest "
+                  f"(EMA20={ema20_weekly_val:.2f}, EMA50={ema50_weekly_val:.2f}, "
+                  f"EMA100={ema100_weekly_val:.2f}, EMA150={ema150_weekly_val:.2f}, "
+                  f"EMA200={ema200_weekly_val:.2f}) — skipping weekly signals")
 
         # Суперузкий диапазон: акция в tight consolidation — все сигналы отключаем
         tight_range = _is_tight_range(hist_daily)
@@ -801,7 +818,7 @@ def get_stock_signals(ticker, category='Other'):
         no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or ema50_below_ema200_daily or daily_sideways or three_month_flat or six_month_flat or ema200_saw_daily
         # Для EMA200 weekly: блокируем при структурном даунтренде, tight_range, 3 месяца без роста,
         # или долгосрочном падении >70% за 5 лет (downtrend_warning).
-        no_ema200_weekly = tight_range or ema20_below_ema200 or bool(downtrend_warning) or ema200_saw_daily
+        no_ema200_weekly = tight_range or ema20_below_ema200 or weekly_ema200_not_lowest or bool(downtrend_warning) or ema200_saw_daily
 
         # Плашки считаются отдельно для дневного и недельного таймфреймов
         if no_signals:
