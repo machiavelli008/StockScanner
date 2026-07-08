@@ -775,7 +775,7 @@ def get_stock_signals(ticker, category='Other'):
                     daily_sideways = True
                     print(f"  INFO: {ticker} daily sideways (2m change {pct_change_2m:.1f}% < 3%) — skipping daily signals")
 
-        # 3 месяца без роста (<3% изменение за 63 бара) — блокируем все сигналы включая недельный EMA200
+        # 3 месяца без роста (<3% изменение за 63 бара) — блокируем дневные сигналы
         three_month_flat = False
         if len(hist_daily) >= 64:
             price_3m_ago = float(hist_daily['Close'].iloc[-64])
@@ -783,12 +783,22 @@ def get_stock_signals(ticker, category='Other'):
                 pct_change_3m = abs(current_price - price_3m_ago) / price_3m_ago * 100
                 if pct_change_3m < 3.0:
                     three_month_flat = True
-                    print(f"  INFO: {ticker} no growth 3m (change {pct_change_3m:.1f}% < 3%) — skipping all signals")
+                    print(f"  INFO: {ticker} no growth 3m (change {pct_change_3m:.1f}% < 3%) — skipping daily signals")
+
+        # 6 месяцев без роста (<5% изменение за 126 баров) — блокируем дневные сигналы
+        six_month_flat = False
+        if len(hist_daily) >= 127:
+            price_6m_ago = float(hist_daily['Close'].iloc[-127])
+            if price_6m_ago > 0:
+                pct_change_6m = abs(current_price - price_6m_ago) / price_6m_ago * 100
+                if pct_change_6m < 5.0:
+                    six_month_flat = True
+                    print(f"  INFO: {ticker} no growth 6m (change {pct_change_6m:.1f}% < 5%) — skipping daily signals")
 
         ema200_saw_daily = False  # резерв, логика отключена
 
-        # Фильтр дневных сигналов: боковик, tight range, EMA20 < EMA200 (недельный или дневной)
-        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or ema50_below_ema200_daily or daily_sideways or three_month_flat or ema200_saw_daily
+        # Фильтр дневных сигналов: боковик, tight range, EMA20/EMA50 < EMA200 (недельный или дневной)
+        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or ema50_below_ema200_daily or daily_sideways or three_month_flat or six_month_flat or ema200_saw_daily
         # Для EMA200 weekly: блокируем при структурном даунтренде, tight_range, 3 месяца без роста,
         # или долгосрочном падении >70% за 5 лет (downtrend_warning).
         no_ema200_weekly = tight_range or ema20_below_ema200 or bool(downtrend_warning) or ema200_saw_daily
