@@ -754,13 +754,16 @@ def get_stock_signals(ticker, category='Other'):
         if tight_range:
             print(f"  INFO: {ticker} in tight range (<4% over 15 bars) — skipping signals")
 
-        # Daily EMA20 < Daily EMA200 — блокируем только дневные сигналы (не недельные).
-        # Дневная EMA20 может временно падать ниже EMA200 при коррекции у здоровых акций.
+        # Daily EMA20/EMA50 < Daily EMA200 — блокируем только дневные сигналы (не недельные).
         ema20_daily_val  = float(hist_daily['ema_20'].iloc[-1])
+        ema50_daily_val  = float(hist_daily['ema_50'].iloc[-1])
         ema200_daily_val = float(hist_daily['ema_200'].iloc[-1])
         ema20_below_ema200_daily = ema20_daily_val < ema200_daily_val
+        ema50_below_ema200_daily = ema50_daily_val < ema200_daily_val
         if ema20_below_ema200_daily:
             print(f"  INFO: {ticker} daily EMA20 ({ema20_daily_val:.2f}) < EMA200 ({ema200_daily_val:.2f}) — skipping daily signals")
+        if ema50_below_ema200_daily:
+            print(f"  INFO: {ticker} daily EMA50 ({ema50_daily_val:.2f}) < EMA200 ({ema200_daily_val:.2f}) — skipping daily signals")
 
         # Боковик на дневном: если цена 2 месяца назад (42 бара) отличается менее чем на 3% — боковик.
         daily_sideways = False
@@ -785,7 +788,7 @@ def get_stock_signals(ticker, category='Other'):
         ema200_saw_daily = False  # резерв, логика отключена
 
         # Фильтр дневных сигналов: боковик, tight range, EMA20 < EMA200 (недельный или дневной)
-        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or daily_sideways or three_month_flat or ema200_saw_daily
+        no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or ema50_below_ema200_daily or daily_sideways or three_month_flat or ema200_saw_daily
         # Для EMA200 weekly: блокируем при структурном даунтренде, tight_range, 3 месяца без роста,
         # или долгосрочном падении >70% за 5 лет (downtrend_warning).
         no_ema200_weekly = tight_range or ema20_below_ema200 or bool(downtrend_warning) or ema200_saw_daily
