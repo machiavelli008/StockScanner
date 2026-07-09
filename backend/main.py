@@ -175,18 +175,12 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
 
         if period == 20 and ema10_val:
             # EMA20: зона входа = от EMA20 до EMA10+1%.
-            # Цена внутри этой зоны (пуллбэк или отскок) → Ready to Buy.
-            # Выше EMA10+1% → сигнал снимается (сетап отыгран).
+            # Цена должна быть ВЫШЕ EMA20 и пришла сверху — только тогда сигнал.
             if price_above and came_from_above:
                 in_ema20_touch  = dist_pct <= entry_pct or low_wick_touch
                 in_bounce_zone  = current_price <= ema10_val * 1.01
                 if in_ema20_touch or in_bounce_zone:
                     signal_type = 'entry_zone'
-            elif not price_above and came_from_above:
-                if dist_pct <= entry_pct:
-                    signal_type = 'entry_zone'
-                elif dist_pct <= 2.0:
-                    signal_type = 'watching'
         elif period == 200:
             # EMA200: стратегическая скользящая, came_from_above не проверяем.
             # Зона: цена подходит сверху вниз к EMA200 ИЛИ пробила вниз не более 1 ATR.
@@ -821,7 +815,7 @@ def get_stock_signals(ticker, category='Other'):
         no_signals = sideways_warning or tight_range or ema20_below_ema200 or ema20_below_ema200_daily or ema50_below_ema200_daily or daily_sideways or three_month_flat or six_month_flat or ema200_saw_daily
         # Для EMA200 weekly: блокируем при структурном даунтренде, tight_range, 3 месяца без роста,
         # или долгосрочном падении >70% за 5 лет (downtrend_warning).
-        no_ema200_weekly = tight_range or ema20_below_ema200 or weekly_ema200_not_lowest or bool(downtrend_warning) or ema200_saw_daily
+        no_ema200_weekly = tight_range or ema20_below_ema200 or weekly_ema200_not_lowest or bool(downtrend_warning) or daily_sideways or three_month_flat or six_month_flat or ema200_saw_daily
 
         # Плашки считаются отдельно для дневного и недельного таймфреймов
         if no_signals:
