@@ -1425,7 +1425,36 @@ def telegram_report():
         if has_weekly:
             weekly_lines.append(ticker)
 
-    if not daily_lines and not weekly_lines:
+    # ── Скринер: подхват EMA20, у EMA200 на дневном и недельном ─────────────────
+    screener_daily  = []
+    screener_weekly = []
+    try:
+        sc_path = screener_module.SCREENER_RESULTS_PATH
+        if sc_path.exists():
+            sc_data    = json.loads(sc_path.read_text(encoding='utf-8'))
+            sc_results = sc_data.get('results', {})
+            scanner_set = set(daily_lines) | set(weekly_lines)
+            for ticker, r in sc_results.items():
+                sig_types = set(r.get('signal_types', []))
+                has_d = (
+                    'ready_20ema' in sig_types or
+                    'ema200_daily_entry' in sig_types or
+                    'ema200_daily_approach' in sig_types
+                )
+                has_w = (
+                    'ema200_weekly_entry' in sig_types or
+                    'ema200_weekly_approach' in sig_types
+                )
+                if has_d and ticker not in scanner_set:
+                    screener_daily.append(ticker)
+                if has_w and ticker not in scanner_set:
+                    screener_weekly.append(ticker)
+        screener_daily.sort()
+        screener_weekly.sort()
+    except Exception as e:
+        print(f"[TELEGRAM] Screener load error: {e}")
+
+    if not daily_lines and not weekly_lines and not screener_daily and not screener_weekly:
         return {"status": "ok", "detail": "Нет сигналов по критериям"}
 
     def send_msg(text):
@@ -1450,14 +1479,28 @@ def telegram_report():
             if len(text) > 4096:
                 text = text[:4090] + "..."
             send_msg(text)
+
+        if screener_daily:
+            text = f"🔍 Скринер дневной — {now_str}\n\n" + ", ".join(screener_daily)
+            if len(text) > 4096:
+                text = text[:4090] + "..."
+            send_msg(text)
+
+        if screener_weekly:
+            text = f"🔍 Скринер недельный — {now_str}\n\n" + ", ".join(screener_weekly)
+            if len(text) > 4096:
+                text = text[:4090] + "..."
+            send_msg(text)
     except Exception as e:
         errors.append(str(e))
 
     return {
-        "status": "ok" if not errors else "partial",
-        "daily":  daily_lines,
-        "weekly": weekly_lines,
-        "errors": errors,
+        "status":           "ok" if not errors else "partial",
+        "daily":            daily_lines,
+        "weekly":           weekly_lines,
+        "screener_daily":   screener_daily,
+        "screener_weekly":  screener_weekly,
+        "errors":           errors,
     }
 
 

@@ -91,7 +91,71 @@ def batch_prefilter(tickers: list[str], yf) -> list[str]:
 def _calc_emas(hist: pd.DataFrame) -> pd.DataFrame:
     for p in [10, 20, 50, 200]:
         hist[f'ema_{p}'] = hist['Close'].ewm(span=p, adjust=False).mean()
+    # ATR (14-period)
+    hi = hist['High']
+    lo = hist['Low']
+    pr = hist['Close'].shift(1)
+    tr = pd.concat([hi - lo, (hi - pr).abs(), (lo - pr).abs()], axis=1).max(axis=1)
+    hist['atr'] = tr.ewm(span=14, adjust=False).mean()
     return hist
+
+
+def _ema200_has_bounce_history(hist: pd.DataFrame, min_touches: int = 2) -> bool:
+    """
+    EMA200 выступала как поддержка >= min_touches раз в истории:
+    - цена входила в зону ±1 ATR от EMA200 сверху
+    - не закрывалась ниже EMA200 - 1 ATR
+    - отскакивала выше EMA200 + 1 ATR с ростом >= 1 ATR от минимума касания
+    """
+    if len(hist) < 60 or 'atr' not in hist.columns:
+        return False
+
+    n       = len(hist) - 1  # исключаем текущий (последний) бар
+    closes  = hist['Close'].values
+    ema200s = hist['ema_200'].values
+    atrs    = hist['atr'].values
+
+    touches   = 0
+    in_touch  = False
+    touch_low = 0.0
+    touch_atr = 0.0
+    was_above = False  # price was above EMA200 + 1 ATR on previous bar
+
+    for i in range(n):
+        try:
+            close  = float(closes[i])
+            ema200 = float(ema200s[i])
+            atr    = float(atrs[i])
+            if ema200 <= 0 or atr <= 0:
+                continue
+
+            above_zone = close > ema200 + atr
+            in_zone    = ema200 - atr <= close <= ema200 + atr
+            below_zone = close < ema200 - atr
+
+            if not in_touch:
+                if was_above and in_zone:
+                    in_touch  = True
+                    touch_low = close
+                    touch_atr = atr
+            else:
+                if below_zone:
+                    in_touch = False
+                elif above_zone:
+                    if (close - touch_low) >= touch_atr:
+                        touches += 1
+                    in_touch  = False
+                    was_above = True
+                    continue
+                else:
+                    if close < touch_low:
+                        touch_low = close
+
+            was_above = above_zone
+        except Exception:
+            continue
+
+    return touches >= min_touches
 
 
 def _is_hammer(high, low, open_, close) -> bool:
@@ -264,10 +328,12 @@ def screen_double_triple_strike(hist: pd.DataFrame) -> dict | None:
 def screen_ema_approach_daily(hist: pd.DataFrame) -> list[str]:
     """EMA 20/50/200 подход сверху на дневном (упрощённо для скринера)."""
     found = []
-    cur = float(hist['Close'].iloc[-1])
-    # 200 EMA фильтр
-    if cur < float(hist['ema_200'].iloc[-1]):
+    cur        = float(hist['Close'].iloc[-1])
+    ema200_val = float(hist['ema_200'].iloc[-1])
+    if cur < ema200_val:
         return found
+    ema20_val = float(hist['ema_20'].iloc[-1])
+    ema50_val = float(hist['ema_50'].iloc[-1])
     for period, entry_pct, approach_pct in [(20, 1.0, 2.0), (50, 1.5, 3.0), (200, 4.0, 6.0)]:
         col = f'ema_{period}'
         if col not in hist.columns:
@@ -276,13 +342,18 @@ def screen_ema_approach_daily(hist: pd.DataFrame) -> list[str]:
         if cur < ema_val:
             continue
         dist = (cur - ema_val) / ema_val * 100
-        # Цена пришла сверху (последние 3 бара выше EMA)
         came_from_above = all(
             float(hist['Close'].iloc[-i]) >= float(hist[col].iloc[-i])
             for i in range(2, 5) if len(hist) > i
         )
         if not came_from_above:
             continue
+        # EMA200: восходящий тренд (EMA20 > EMA50 > EMA200) + минимум 2 исторических отскока
+        if period == 200:
+            if not (ema20_val > ema50_val > ema200_val):
+                continue
+            if not _ema200_has_bounce_history(hist, min_touches=2):
+                continue
         if dist <= entry_pct:
             found.append(f'ema{period}_daily_entry')
         elif dist <= approach_pct:
@@ -295,9 +366,12 @@ def screen_ema_approach_weekly(hist_w: pd.DataFrame) -> list[str]:
     found = []
     if len(hist_w) < 5:
         return found
-    cur = float(hist_w['Close'].iloc[-1])
-    if cur < float(hist_w['ema_200'].iloc[-1]):
+    cur        = float(hist_w['Close'].iloc[-1])
+    ema200_val = float(hist_w['ema_200'].iloc[-1])
+    if cur < ema200_val:
         return found
+    ema20_val = float(hist_w['ema_20'].iloc[-1])
+    ema50_val = float(hist_w['ema_50'].iloc[-1])
     for period, entry_pct, approach_pct in [(20, 2.0, 4.0), (50, 2.0, 4.0), (200, 5.0, 8.0)]:
         col = f'ema_{period}'
         if col not in hist_w.columns:
@@ -312,6 +386,12 @@ def screen_ema_approach_weekly(hist_w: pd.DataFrame) -> list[str]:
         )
         if not came_from_above:
             continue
+        # EMA200: восходящий тренд (EMA20 > EMA50 > EMA200) + минимум 2 исторических отскока
+        if period == 200:
+            if not (ema20_val > ema50_val > ema200_val):
+                continue
+            if not _ema200_has_bounce_history(hist_w, min_touches=2):
+                continue
         if dist <= entry_pct:
             found.append(f'ema{period}_weekly_entry')
         elif dist <= approach_pct:
