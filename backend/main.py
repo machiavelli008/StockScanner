@@ -680,11 +680,13 @@ def get_stock_signals(ticker, category='Other'):
                     )
                     print(f"  WARNING: {ticker} lost {abs(change_5y)*100:.0f}% in 5Y — flagged as downtrending")
         
-        ema_periods = [20, 50, 100, 200]
+        ema_periods = [20, 50, 200]
 
         # Daily — EMA считаем на 15 годах, потом обрезаем до последних 10 для анализа
         for period in ema_periods:
             hist_daily[f'ema_{period}'] = calculate_ema(hist_daily['Close'], period)
+        # EMA100 дневной — только для фильтра нисходящего тренда, не для сигналов
+        hist_daily['ema_100'] = calculate_ema(hist_daily['Close'], 100)
         # EMA10 — граница зоны EMA20 (не отдельный сигнал, только для EMA20 логики)
         hist_daily['ema_10'] = calculate_ema(hist_daily['Close'], 10)
         hist_daily = calculate_atr(hist_daily, 14)
@@ -702,7 +704,8 @@ def get_stock_signals(ticker, category='Other'):
         for period in ema_periods:
             hist_weekly[f'ema_{period}'] = calculate_ema(hist_weekly['Close'], period)
         hist_weekly['ema_10']  = calculate_ema(hist_weekly['Close'], 10)
-        # EMA150 только для недельного (для детектора молотов)
+        # EMA100 и EMA150 на недельном — только для фильтра нисходящего тренда, не для сигналов
+        hist_weekly['ema_100'] = calculate_ema(hist_weekly['Close'], 100)
         hist_weekly['ema_150'] = calculate_ema(hist_weekly['Close'], 150)
         hist_weekly = calculate_atr(hist_weekly, 14)
         hist_weekly = hist_weekly.dropna()
@@ -1175,7 +1178,7 @@ def debug_touches(ticker: str, ema: int = 20, timeframe: str = "weekly",
         hist = hist[hist.index > cutoff]
 
         ema_col   = f'ema_{ema}'
-        all_cols  = ['ema_20', 'ema_50', 'ema_100', 'ema_200']
+        all_cols  = ['ema_20', 'ema_50', 'ema_200']
         lower_emas = [] if ema == 20 else [c for c in all_cols if c != ema_col]
         is_weekly  = timeframe == "weekly"
         near_pct   = 0.0015
@@ -1396,7 +1399,7 @@ def telegram_report():
 
         # ── Недельные сигналы ────────────────────────────────────────────────
         has_weekly = False
-        for ema_key in ["ema_20", "ema_50", "ema_100", "ema_200"]:
+        for ema_key in ["ema_20", "ema_50", "ema_200"]:
             v = ema_w.get(ema_key, {})
             if isinstance(v, dict) and v.get("signal_type") == "entry_zone":
                 if ema_key == "ema_200":
@@ -1478,7 +1481,7 @@ def _telegram_send_impl():
         ema_w = s.get("current_ema_weekly") or {}
         has_ema = any(
             isinstance(v, dict) and v.get("signal_type") in ("entry_zone", "approaching", "watching")
-            for d in (ema_d, ema_w) for k, v in d.items() if k != "ema_100"
+            for d in (ema_d, ema_w) for k, v in d.items()
         )
         if has_ema or s.get("ready_20ema") or s.get("strike_signal") or s.get("hammer_signal"):
             tickers_with_signals.append(ticker)
@@ -1916,7 +1919,7 @@ def incremental_update():
     all_tickers    = load_tickers()
     new_tickers    = [(t, c) for t, c in all_tickers if t not in existing]
     tickers        = list(existing.keys())
-    ema_periods    = [20, 50, 100, 200]
+    ema_periods    = [20, 50, 200]
     yf             = get_yfinance()
 
     print(f"[INCREMENTAL] Batch downloading {len(tickers)} tickers (10d daily + 1mo weekly)...")
@@ -2029,7 +2032,7 @@ def send_telegram_report():
 
         has_ema = any(
             isinstance(v, dict) and v.get("signal_type") in ("entry_zone", "approaching", "watching")
-            for d in (ema_d, ema_w) for k, v in d.items() if k != "ema_100"
+            for d in (ema_d, ema_w) for k, v in d.items()
         )
         if has_ema or s.get("ready_20ema") or s.get("strike_signal") or s.get("hammer_signal"):
             tickers_with_signals.append(ticker)
