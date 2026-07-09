@@ -1079,7 +1079,7 @@ def load_signals_from_file():
         return False
     try:
         import json
-        with open(SIGNALS_JSON_PATH, "r", encoding="utf-8") as f:
+        with open(SIGNALS_JSON_PATH, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         signals = data.get("signals", [])
         data_generated_at = data.get("last_update", "unknown")
