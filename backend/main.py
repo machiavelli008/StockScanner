@@ -175,12 +175,15 @@ def compute_current_ema_signals(hist, current_price, ema_periods, is_weekly=Fals
         came_from_above = all(c >= e for c, e in zip(prev_closes, prev_emas))
 
         if period == 20 and ema10_val:
-            # EMA20: зона входа = от EMA20 до EMA10+1%.
-            # Цена должна быть ВЫШЕ EMA20 и пришла сверху — только тогда сигнал.
+            # EMA20: сигнал только при реальном касании скользящей.
+            # Цена пришла сверху и коснулась EMA20 (в пределах entry_pct или wick).
+            # Допускается небольшой уход ниже EMA20 в пределах 1 ATR.
             if price_above and came_from_above:
-                in_ema20_touch  = dist_pct <= entry_pct or low_wick_touch
-                in_bounce_zone  = current_price <= ema10_val * 1.01
-                if in_ema20_touch or in_bounce_zone:
+                if dist_pct <= entry_pct or low_wick_touch:
+                    signal_type = 'entry_zone'
+            elif not price_above and came_from_above:
+                # Цена чуть ушла ниже EMA20 но в пределах 1 ATR — допустимый прокол
+                if dist_pct <= atr_pct:
                     signal_type = 'entry_zone'
         elif period == 200:
             # EMA200: стратегическая скользящая, came_from_above не проверяем.
