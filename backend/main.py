@@ -33,6 +33,7 @@ print(f"Frontend path: {frontend_path}")
 # Глобальный кэш для сигналов
 signals_cache = {'signals': [], 'last_update': None}
 cache_lock = threading.Lock()
+_refresh_running = threading.Lock()  # Предотвращает параллельные refresh
 CACHE_EXPIRY_MINUTES = 5  # Кэш устаревает через 5 минут
 AUTO_REFRESH_INTERVAL_SECONDS = 300  # Автообновление каждые 5 минут
 background_thread_stop = False  # Флаг для остановки фонового потока
@@ -863,6 +864,7 @@ def get_stock_signals(ticker, category='Other'):
             "sideways_warning": sideways_warning,
             "daily_sideways": daily_sideways,
             "three_month_flat": three_month_flat,
+            "six_month_flat": six_month_flat,
             "ema200_saw_daily": ema200_saw_daily,
             "ready_20ema": is_ready_20ema,
             "strike_signal": strike_signal,
@@ -1023,7 +1025,21 @@ def _fetch_ticker(ticker, category):
 
 
 def refresh_signals():
-    """Обновить кэш сигналов — параллельно по 3 тикера."""
+    """Обновить кэш сигналов. Только один экземпляр может работать одновременно."""
+    global signals_cache
+
+    if not _refresh_running.acquire(blocking=False):
+        print("[REFRESH] Already running — skipping duplicate call")
+        return
+
+    try:
+        _do_refresh_signals()
+    finally:
+        _refresh_running.release()
+
+
+def _do_refresh_signals():
+    """Внутренняя реализация refresh — вызывается только через refresh_signals()."""
     global signals_cache
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
