@@ -1,4 +1,3 @@
-data/signals.json
 data/active_tickers.json
 __pycache__/
 *.pyc

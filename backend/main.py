@@ -2181,26 +2181,15 @@ async def startup_event():
     loaded = load_signals_from_file()
     if loaded:
         print("\n=== Signals loaded from file on startup ===")
-        if ENABLE_BACKGROUND_REFRESH:
-            if _is_data_stale(max_age_hours=168):  # >7 дней — полный пересчёт
-                print("=== Data is stale (>7d) — triggering full refresh ===")
-                t = threading.Thread(target=refresh_signals, daemon=True)
-                t.start()
-            elif _is_data_stale(max_age_hours=12):  # 12ч–7д — инкрементальное обновление
-                print("=== Data is stale (>12h) — triggering incremental update ===")
-                t = threading.Thread(target=incremental_update, daemon=True)
-                t.start()
-    elif ENABLE_STARTUP_REFRESH:
-        try:
-            print("\n=== Loading signals on startup via yfinance ===")
-            refresh_signals()
-        except Exception as e:
-            print(f"\n⚠️  Startup refresh failed: {e}")
+        # Данные из файла актуальны — refresh запустится по расписанию (16:30 ET / Sun 10:00 ET)
     else:
-        print("\n=== No signals file found, triggering background refresh ===")
+        # Файл не найден — ждём планового refresh по расписанию.
+        # При деплое signals.json должен присутствовать в репозитории.
+        print("\n=== No signals file found — waiting for scheduled refresh ===")
         if not os.getenv("VERCEL") and ENABLE_BACKGROUND_REFRESH:
             t = threading.Thread(target=refresh_signals, daemon=True)
             t.start()
+            print("=== Background refresh started (first-run fallback) ===")
 
     # Запускаем фоновое расписание — работает на Railway и локально
     if ENABLE_BACKGROUND_REFRESH and not os.getenv("VERCEL"):
