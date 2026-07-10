@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
@@ -21,6 +21,28 @@ def get_yfinance():
     return yf
 
 app = FastAPI()
+
+# Секретный ключ для защиты "чувствительных" эндпоинтов (запуск пересчёта,
+# отправка в Telegram и т.д.), чтобы их не мог дёргать кто угодно в интернете.
+# Задаётся в переменной окружения ADMIN_KEY на Railway/Vercel — в коде и в
+# GitHub-репозитории сам ключ никогда не хранится.
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
+
+
+def require_admin_key(request: Request):
+    """
+    FastAPI-зависимость: пропускает запрос, только если в адресе есть
+    ?key=ПРАВИЛЬНЫЙ_КЛЮЧ (или заголовок X-Admin-Key с тем же значением).
+    Если ADMIN_KEY не задан на сервере — эндпоинт остаётся открытым (чтобы
+    не сломать локальную разработку), но при этом печатает предупреждение.
+    """
+    if not ADMIN_KEY:
+        print("[SECURITY WARNING] ADMIN_KEY не задан — защищённый эндпоинт открыт для всех!")
+        return
+    provided = request.query_params.get("key") or request.headers.get("X-Admin-Key", "")
+    if provided != ADMIN_KEY:
+        raise HTTPException(status_code=401, detail="Неверный или отсутствующий ключ доступа (?key=...)")
+
 
 # Health check - простой эндпоинт для проверки, что app работает
 @app.get("/health")
@@ -1190,7 +1212,7 @@ def get_signals():
 @app.post("/api/refresh")
 @app.get("/api/refresh")
 @app.get("/api/incremental")
-def refresh_signals_endpoint():
+def refresh_signals_endpoint(_=Depends(require_admin_key)):
     """Запускает инкрементальное обновление EMA в фоне и сразу возвращает ответ."""
     thread = threading.Thread(target=incremental_update, daemon=True)
     thread.start()
@@ -1396,25 +1418,26 @@ def analyze_signals():
 
 
 @app.get("/api/telegram/debug")
-def telegram_debug():
+def telegram_debug(_=Depends(require_admin_key)):
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat  = os.environ.get("TELEGRAM_CHAT_ID", "")
     return {
         "token_set": bool(token),
         "token_len": len(token),
         "chat_set":  bool(chat),
-        "chat_id":   chat,
+        # chat_id больше не отдаём в открытом виде — раньше это было утечкой.
+        "chat_id_masked": (chat[:2] + "…" + chat[-2:]) if len(chat) > 4 else bool(chat),
     }
 
 
 @app.get("/api/telegram/send")
-def telegram_send_get():
+def telegram_send_get(_=Depends(require_admin_key)):
     return _telegram_send_impl()
 
 
 @app.get("/api/telegram/report")
 @app.post("/api/telegram/report")
-def telegram_report():
+def telegram_report(_=Depends(require_admin_key)):
     """Отчёт разделён на дневные и недельные сигналы. EMA200 weekly без проверки вероятности."""
     import urllib.request, urllib.parse
 
@@ -1556,7 +1579,7 @@ def telegram_report():
 
 
 @app.post("/api/telegram/send")
-def telegram_send_endpoint():
+def telegram_send_endpoint(_=Depends(require_admin_key)):
     """Отправляет сигналы в Telegram и возвращает подробный результат."""
     try:
         return _telegram_send_impl()
@@ -1618,7 +1641,7 @@ def _telegram_send_impl():
 
 
 @app.post("/api/screener/run")
-def run_screener_endpoint():
+def run_screener_endpoint(_=Depends(require_admin_key)):
     """Запускает полный скан вселенной в фоновом потоке (~10-15 мин)."""
     def _run():
         yf = get_yfinance()
