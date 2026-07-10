@@ -1499,9 +1499,21 @@ def telegram_report(_=Depends(require_admin_key)):
         if has_weekly:
             weekly_lines.append(ticker)
 
-    # ── Скринер: подхват EMA20, у EMA200 на дневном и недельном ─────────────────
-    screener_daily  = []
-    screener_weekly = []
+    # ── Скринер: группировка по типу сигнала ─────────────────────────────────────
+    _SC_LABELS = {
+        'ready_20ema':            '🎯 Подхват EMA20',
+        'ema200_daily_entry':     '📍 У EMA200 дневной',
+        'ema200_daily_approach':  '📍 У EMA200 дневной (подход)',
+        'three_hammers_daily':    '🔨 Три молота дневной',
+        'ema200_weekly_entry':    '📍 У EMA200 недельный',
+        'ema200_weekly_approach': '📍 У EMA200 недельный (подход)',
+        'three_hammers_weekly':   '🔨 Три молота недельный',
+    }
+    _DAILY_TYPES  = {'ready_20ema', 'ema200_daily_entry', 'ema200_daily_approach', 'three_hammers_daily'}
+    _WEEKLY_TYPES = {'ema200_weekly_entry', 'ema200_weekly_approach', 'three_hammers_weekly'}
+
+    screener_daily_groups  = {}  # {signal_type: [tickers]}
+    screener_weekly_groups = {}
     try:
         sc_path = screener_module.SCREENER_RESULTS_PATH
         if sc_path.exists():
@@ -1509,26 +1521,19 @@ def telegram_report(_=Depends(require_admin_key)):
             sc_results = sc_data.get('results', {})
             scanner_set = set(daily_lines) | set(weekly_lines)
             for ticker, r in sc_results.items():
-                sig_types = set(r.get('signal_types', []))
-                has_d = (
-                    'ready_20ema' in sig_types or
-                    'ema200_daily_entry' in sig_types or
-                    'ema200_daily_approach' in sig_types
-                )
-                has_w = (
-                    'ema200_weekly_entry' in sig_types or
-                    'ema200_weekly_approach' in sig_types
-                )
-                if has_d and ticker not in scanner_set:
-                    screener_daily.append(ticker)
-                if has_w and ticker not in scanner_set:
-                    screener_weekly.append(ticker)
-        screener_daily.sort()
-        screener_weekly.sort()
+                for st in r.get('signal_types', []):
+                    if st in _DAILY_TYPES and ticker not in scanner_set:
+                        screener_daily_groups.setdefault(st, []).append(ticker)
+                    if st in _WEEKLY_TYPES and ticker not in scanner_set:
+                        screener_weekly_groups.setdefault(st, []).append(ticker)
+        for g in screener_daily_groups.values():
+            g.sort()
+        for g in screener_weekly_groups.values():
+            g.sort()
     except Exception as e:
         print(f"[TELEGRAM] Screener load error: {e}")
 
-    if not daily_lines and not weekly_lines and not screener_daily and not screener_weekly:
+    if not daily_lines and not weekly_lines and not screener_daily_groups and not screener_weekly_groups:
         return {"status": "ok", "detail": "Нет сигналов по критериям"}
 
     def send_msg(text):
@@ -1554,14 +1559,22 @@ def telegram_report(_=Depends(require_admin_key)):
                 text = text[:4090] + "..."
             send_msg(text)
 
-        if screener_daily:
-            text = f"🔍 Скринер дневной — {now_str}\n\n" + ", ".join(screener_daily)
+        if screener_daily_groups:
+            parts = [f"🔍 Скринер дневной — {now_str}"]
+            for st, tickers in screener_daily_groups.items():
+                label = _SC_LABELS.get(st, st)
+                parts.append(f"\n{label}:\n{', '.join(tickers)}")
+            text = "\n".join(parts)
             if len(text) > 4096:
                 text = text[:4090] + "..."
             send_msg(text)
 
-        if screener_weekly:
-            text = f"🔍 Скринер недельный — {now_str}\n\n" + ", ".join(screener_weekly)
+        if screener_weekly_groups:
+            parts = [f"🔍 Скринер недельный — {now_str}"]
+            for st, tickers in screener_weekly_groups.items():
+                label = _SC_LABELS.get(st, st)
+                parts.append(f"\n{label}:\n{', '.join(tickers)}")
+            text = "\n".join(parts)
             if len(text) > 4096:
                 text = text[:4090] + "..."
             send_msg(text)
@@ -1569,12 +1582,12 @@ def telegram_report(_=Depends(require_admin_key)):
         errors.append(str(e))
 
     return {
-        "status":           "ok" if not errors else "partial",
-        "daily":            daily_lines,
-        "weekly":           weekly_lines,
-        "screener_daily":   screener_daily,
-        "screener_weekly":  screener_weekly,
-        "errors":           errors,
+        "status":                "ok" if not errors else "partial",
+        "daily":                 daily_lines,
+        "weekly":                weekly_lines,
+        "screener_daily_groups": screener_daily_groups,
+        "screener_weekly_groups": screener_weekly_groups,
+        "errors":                errors,
     }
 
 
