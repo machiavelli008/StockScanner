@@ -288,6 +288,18 @@ def screen_two_hammers_weekly(hist_w: pd.DataFrame) -> bool:
     return True
 
 
+def screen_three_hammers(hist: pd.DataFrame) -> bool:
+    """Три молота подряд на любом таймфрейме. Без дополнительных условий."""
+    if len(hist) < 4:
+        return False
+    for i in (-1, -2, -3):
+        row = hist.iloc[i]
+        if not _is_hammer(float(row['High']), float(row['Low']),
+                          float(row['Open']), float(row['Close'])):
+            return False
+    return True
+
+
 def screen_double_triple_strike(hist: pd.DataFrame) -> dict | None:
     """
     Текущий бар поглощает диапазон 2 (двойной) или 3 (тройной) предыдущих.
@@ -432,6 +444,10 @@ def _screen_one(ticker: str, hist_d: pd.DataFrame, hist_w: pd.DataFrame) -> dict
             found['first_touch_20ema'] = True
         if len(hist_w) >= 10 and screen_two_hammers_weekly(hist_w):
             found['two_hammers_weekly'] = True
+        if screen_three_hammers(hist_d):
+            found['three_hammers_daily'] = True
+        if len(hist_w) >= 4 and screen_three_hammers(hist_w):
+            found['three_hammers_weekly'] = True
 
         strike_d = screen_double_triple_strike(hist_d)
         if strike_d:
