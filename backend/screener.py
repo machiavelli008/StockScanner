@@ -444,6 +444,8 @@ def _screen_one(ticker: str, hist_d: pd.DataFrame, hist_w: pd.DataFrame) -> dict
             found['first_touch_20ema'] = True
         if len(hist_w) >= 10 and screen_two_hammers_weekly(hist_w):
             found['two_hammers_weekly'] = True
+        if screen_two_hammers_weekly(hist_d):
+            found['two_hammers_daily'] = True
         if screen_three_hammers(hist_d):
             found['three_hammers_daily'] = True
         if len(hist_w) >= 4 and screen_three_hammers(hist_w):

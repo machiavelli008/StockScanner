@@ -1504,12 +1504,13 @@ def telegram_report(_=Depends(require_admin_key)):
         'ready_20ema':            '🎯 Подхват EMA20',
         'ema200_daily_entry':     '📍 У EMA200 дневной',
         'ema200_daily_approach':  '📍 У EMA200 дневной (подход)',
+        'two_hammers_daily':      '🔨 Два молота дневной',
         'three_hammers_daily':    '🔨 Три молота дневной',
         'ema200_weekly_entry':    '📍 У EMA200 недельный',
         'ema200_weekly_approach': '📍 У EMA200 недельный (подход)',
         'three_hammers_weekly':   '🔨 Три молота недельный',
     }
-    _DAILY_TYPES  = {'ready_20ema', 'ema200_daily_entry', 'ema200_daily_approach', 'three_hammers_daily'}
+    _DAILY_TYPES  = {'ready_20ema', 'ema200_daily_entry', 'ema200_daily_approach', 'two_hammers_daily', 'three_hammers_daily'}
     _WEEKLY_TYPES = {'ema200_weekly_entry', 'ema200_weekly_approach', 'three_hammers_weekly'}
 
     screener_daily_groups  = {}  # {signal_type: [tickers]}
