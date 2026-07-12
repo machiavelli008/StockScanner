@@ -2177,10 +2177,10 @@ def send_telegram_report():
 def auto_refresh_background():
     """
     Расписание (ET):
-      Пн-Пт 14:00 — send_telegram_report(): дайджест сигналов
-      Пн-Пт 15:15 — fast_scan_signals()   : текущие цены, ~30 сек
-      Пн-Пт 16:30 — incremental_update()  : инкрементальный пересчёт EMA, ~1 мин
-      Воскресенье 10:00 — refresh_signals(): полный пересчёт раз в неделю
+      Пн-Пт 15:15 — fast_scan_signals()  : текущие цены, ~30 сек
+      Пн-Пт 16:30 — incremental_update() : инкрементальный пересчёт EMA + Telegram отчёт
+      Ежедневно 23:00 — screener         : полный скан всех акций США
+      Воскресенье 10:00 — refresh_signals(): полный пересчёт
     """
     import zoneinfo
     global background_thread_stop
@@ -2259,6 +2259,12 @@ def auto_refresh_background():
                 print(f"[AUTO-REFRESH] Starting incremental update at {pd.Timestamp.now()}")
                 incremental_update()
                 print(f"[AUTO-REFRESH] Incremental update completed at {pd.Timestamp.now()}")
+                print(f"[AUTO-REFRESH] Sending Telegram report...")
+                try:
+                    telegram_report()
+                    print(f"[AUTO-REFRESH] Telegram report sent.")
+                except Exception as tg_err:
+                    print(f"[AUTO-REFRESH] Telegram error: {tg_err}")
             elif kind == 'screener':
                 print(f"[AUTO-REFRESH] Starting screener at {pd.Timestamp.now()}")
                 screener_module.run_full_screener(get_yfinance())
