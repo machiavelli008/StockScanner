@@ -2176,11 +2176,12 @@ def send_telegram_report():
 
 def auto_refresh_background():
     """
-    Расписание (ET):
-      Пн-Пт 15:15 — fast_scan_signals()  : текущие цены, ~30 сек
-      Пн-Пт 16:30 — incremental_update() : инкрементальный пересчёт EMA + Telegram отчёт
-      Ежедневно 23:00 — screener         : полный скан всех акций США
-      Воскресенье 10:00 — refresh_signals(): полный пересчёт
+    Расписание (ET / МСК):
+      Пн-Пт 14:00 ET (21:00 МСК) — telegram_report()   : отчёт в Telegram
+      Пн-Пт 15:15 ET             — fast_scan_signals()  : текущие цены, ~30 сек
+      Пн-Пт 16:30 ET             — incremental_update() : пересчёт EMA
+      Ежедневно 23:00 ET         — screener             : полный скан акций США
+      Воскресенье 10:00 ET       — refresh_signals()    : полный пересчёт
     """
     import zoneinfo
     global background_thread_stop
@@ -2198,9 +2199,12 @@ def auto_refresh_background():
             candidates = []
 
             if dow < 5:  # Пн-Пт
+                telegram_et    = today_et + pd.Timedelta(hours=14, minutes=0)
                 fast_scan_et   = today_et + pd.Timedelta(hours=15, minutes=15)
                 incremental_et = today_et + pd.Timedelta(hours=16, minutes=30)
                 screener_et    = today_et + pd.Timedelta(hours=23, minutes=0)
+                if now_et < telegram_et:
+                    candidates.append(('telegram',    telegram_et))
                 if now_et < fast_scan_et:
                     candidates.append(('fast_scan',   fast_scan_et))
                 if now_et < incremental_et:
@@ -2251,7 +2255,14 @@ def auto_refresh_background():
             if background_thread_stop:
                 break
 
-            if kind == 'fast_scan':
+            if kind == 'telegram':
+                print(f"[AUTO-REFRESH] Sending Telegram report at {pd.Timestamp.now()}")
+                try:
+                    telegram_report()
+                    print(f"[AUTO-REFRESH] Telegram report sent.")
+                except Exception as tg_err:
+                    print(f"[AUTO-REFRESH] Telegram error: {tg_err}")
+            elif kind == 'fast_scan':
                 print(f"[AUTO-REFRESH] Starting fast scan at {pd.Timestamp.now()}")
                 fast_scan_signals()
                 print(f"[AUTO-REFRESH] Fast scan completed at {pd.Timestamp.now()}")
@@ -2259,12 +2270,6 @@ def auto_refresh_background():
                 print(f"[AUTO-REFRESH] Starting incremental update at {pd.Timestamp.now()}")
                 incremental_update()
                 print(f"[AUTO-REFRESH] Incremental update completed at {pd.Timestamp.now()}")
-                print(f"[AUTO-REFRESH] Sending Telegram report...")
-                try:
-                    telegram_report()
-                    print(f"[AUTO-REFRESH] Telegram report sent.")
-                except Exception as tg_err:
-                    print(f"[AUTO-REFRESH] Telegram error: {tg_err}")
             elif kind == 'screener':
                 print(f"[AUTO-REFRESH] Starting screener at {pd.Timestamp.now()}")
                 screener_module.run_full_screener(get_yfinance())
