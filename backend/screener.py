@@ -100,6 +100,18 @@ def _calc_emas(hist: pd.DataFrame) -> pd.DataFrame:
     return hist
 
 
+def _is_six_month_flat(hist: pd.DataFrame, is_weekly: bool = False, threshold_pct: float = 5.0) -> bool:
+    """Возвращает True если цена за 6 месяцев изменилась менее чем на threshold_pct%."""
+    bars = 26 if is_weekly else 127
+    if len(hist) < bars + 1:
+        return False
+    price_now = float(hist['Close'].iloc[-1])
+    price_6m  = float(hist['Close'].iloc[-bars])
+    if price_6m <= 0:
+        return False
+    return abs(price_now - price_6m) / price_6m * 100 < threshold_pct
+
+
 def _ema200_has_bounce_history(hist: pd.DataFrame, min_touches: int = 2) -> bool:
     """
     EMA200 выступала как поддержка >= min_touches раз в истории:
@@ -360,9 +372,11 @@ def screen_ema_approach_daily(hist: pd.DataFrame) -> list[str]:
         )
         if not came_from_above:
             continue
-        # EMA200: восходящий тренд (EMA20 > EMA50 > EMA200) + минимум 2 исторических отскока
+        # EMA200: восходящий тренд + нет боковика + история отскоков
         if period == 200:
             if not (ema20_val > ema50_val > ema200_val):
+                continue
+            if _is_six_month_flat(hist, is_weekly=False):
                 continue
             if not _ema200_has_bounce_history(hist, min_touches=2):
                 continue
@@ -398,9 +412,11 @@ def screen_ema_approach_weekly(hist_w: pd.DataFrame) -> list[str]:
         )
         if not came_from_above:
             continue
-        # EMA200: восходящий тренд (EMA20 > EMA50 > EMA200) + минимум 2 исторических отскока
+        # EMA200: восходящий тренд + нет боковика + история отскоков
         if period == 200:
             if not (ema20_val > ema50_val > ema200_val):
+                continue
+            if _is_six_month_flat(hist_w, is_weekly=True):
                 continue
             if not _ema200_has_bounce_history(hist_w, min_touches=2):
                 continue
@@ -498,12 +514,12 @@ def screen_batch(tickers: list[str], yf) -> dict:
         if (i // batch_size + 1) % 5 == 0:
             print(f"[SCREENER] Daily download: {min(i+batch_size, total)}/{total}")
 
-    # Батч недельный (2 года)
+    # Батч недельный (4 года — нужно для корректного EMA200)
     weekly_batches = {}
     for i in range(0, total, batch_size):
         batch = tickers[i: i + batch_size]
         try:
-            data = yf.download(batch, period="2y", interval="1wk",
+            data = yf.download(batch, period="4y", interval="1wk",
                                progress=False, auto_adjust=False)
             for t in batch:
                 try:
