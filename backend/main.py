@@ -427,18 +427,20 @@ def find_touch_events(
         if pd.isna(prev_ema) or pd.isna(ema) or pd.isna(atr) or atr <= 0:
             continue
 
-        # Только движение сверху вниз: минимум 3 свечи подряд были выше EMA перед касанием.
+        # came_from_above: 3 предыдущих бара выше EMA.
+        # Нужен только для позитивных касаний (антидубль).
+        # Для негативных касаний НЕ требуется — если цена идёт ниже EMA и
+        # доходит до EMA50/закрывается ниже EMA-1ATR, это негатив независимо от истории.
         came_from_above = all(
             float(data['Close'].iloc[i - k]) > float(data[ema_col].iloc[i - k])
             for k in range(1, 4)
             if i - k >= 0
         )
-        if not came_from_above:
-            continue
+        # negative_only: событие может быть только негативным (позитив не засчитывается)
+        negative_only = not came_from_above
 
-        # Фильтр наклона EMA: EMA должна вырасти минимум на min_ema_slope_pct за N баров назад.
-        # Если EMA flat или почти не движется — боковик/нисходящий тренд, касание не считаем.
-        if min_ema_slope_bars > 0 and i >= min_ema_slope_bars:
+        # Фильтр наклона EMA: только для позитивных событий.
+        if came_from_above and min_ema_slope_bars > 0 and i >= min_ema_slope_bars:
             ema_past = float(data[ema_col].iloc[i - min_ema_slope_bars])
             if not pd.isna(ema_past) and ema_past > 0:
                 slope_pct = (ema - ema_past) / ema_past
@@ -453,12 +455,10 @@ def find_touch_events(
         if not (near_from_above or actual_touch):
             continue
 
-        # Если уже на стартовой свече задели более низкую MA,
-        # считаем это медвежьим признаком (для классификации события).
-        # Если на стартовой свече LOW уже задел более низкую EMA —
-        # касание не считаем вообще: непонятно на какую EMA реагирует цена.
+        # Если стартовый бар коснулся более низкой EMA — это уже негатив.
+        # Раньше: пропускали. Теперь: запускаем событие как потенциальный негатив.
+        touched_lower_ema_at_start = False
         if lower_ema_cols:
-            touched_lower_ma_on_start = False
             for lower_col in lower_ema_cols:
                 try:
                     lower_val = float(data[lower_col].iloc[i])
@@ -467,16 +467,14 @@ def find_touch_events(
                 if pd.isna(lower_val):
                     continue
                 if lower_val < ema and curr_low <= lower_val:
-                    touched_lower_ma_on_start = True
+                    touched_lower_ema_at_start = True
                     break
-            if touched_lower_ma_on_start:
-                processed_indices.add(i)
-                continue
 
         event_indices = [i]
         candles_in_event = 1
         result = None
-        touched_lower_ema_during = False
+        # Если стартовый бар уже коснулся нижней EMA — инициализируем флаг
+        touched_lower_ema_during = touched_lower_ema_at_start
         max_high_seen = curr_high
 
         end_j = min(i + lookahead, len(data) - 1)
@@ -510,11 +508,15 @@ def find_touch_events(
 
 
             # Positive: Close закрылся выше EMA + 1 ATR (симметрично с негативом — оба по Close).
-            # Если во время события LOW касался нижней EMA — позитив не считаем (неясно на что реакция).
+            # Если во время события LOW касался нижней EMA — это негатив (цена коснулась следующей MA).
+            # Если событие started без came_from_above (negative_only) — позитив не засчитываем.
             # Для weekly: требуем подтверждение — следующие 3 бара не должны закрыться ниже EMA−ATR.
             if f_close >= (f_ema + f_atr):
                 if touched_lower_ema_during:
-                    result = None
+                    result = 'negative'  # Коснулась нижней EMA в ходе события = негатив
+                    break
+                if negative_only:
+                    result = None  # Без came_from_above позитив не считаем
                     break
                 if require_rally_after_negative:  # применяем только для weekly
                     confirmed = True
