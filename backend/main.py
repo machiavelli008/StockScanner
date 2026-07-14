@@ -466,7 +466,9 @@ def find_touch_events(
                     continue
                 if pd.isna(lower_val):
                     continue
-                if lower_val < ema and curr_low <= lower_val:
+                # Касание нижней EMA считается негативным только если close тоже ниже EMA.
+                # Если close закрылся выше EMA — инtraday отскок, не негатив (бычий паттерн).
+                if lower_val < ema and curr_low <= lower_val and curr_close <= ema:
                     touched_lower_ema_at_start = True
                     break
 
@@ -502,7 +504,8 @@ def find_touch_events(
                         lower_val = float(data[lower_col].iloc[j])
                     except Exception:
                         continue
-                    if not pd.isna(lower_val) and lower_val < f_ema and f_low <= lower_val:
+                    # Касание нижней EMA считается негативным только если close тоже ниже EMA.
+                    if not pd.isna(lower_val) and lower_val < f_ema and f_low <= lower_val and f_close <= f_ema:
                         touched_lower_ema_during = True
                         break
 
@@ -547,6 +550,12 @@ def find_touch_events(
             in_consolidation_zone = (f_low <= (f_ema + f_atr) and f_high >= (f_ema - f_atr))
             if not in_consolidation_zone:
                 break
+
+        # Если событие закончилось без явного результата (lookahead истёк),
+        # но в ходе события цена касалась нижней EMA — это негатив.
+        # Касание нижней EMA само по себе является негативным сигналом.
+        if result is None and touched_lower_ema_during and candles_in_event >= 2:
+            result = 'negative'
 
         if candles_in_event >= 2 and result in ('positive', 'negative'):
             # Анти-дубль для частых POSITIVE касаний в одной волне.
