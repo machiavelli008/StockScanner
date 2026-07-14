@@ -567,9 +567,12 @@ def find_touch_events(
             # Фильтр боковика (только weekly): после негативного события требуем ралли —
             # хотя бы одно закрытие выше EMA+ATR. Если его не было — цена в боковике, не считаем.
             if require_rally_after_negative and last_negative_event_end_idx > -10_000:
+                # Включаем последний бар предыдущего события: если он закрылся выше EMA+ATR
+                # (именно по этому условию событие завершилось как негатив через touched_lower_ema)
+                # — это и есть ралли, разделяющее два негатива.
                 had_rally = any(
                     float(data['Close'].iloc[k]) >= float(data[ema_col].iloc[k]) + float(data[atr_col].iloc[k])
-                    for k in range(last_negative_event_end_idx + 1, i)
+                    for k in range(last_negative_event_end_idx, i)
                     if k >= 0
                 )
                 if not had_rally:
