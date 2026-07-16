@@ -2240,15 +2240,24 @@ def auto_refresh_background():
                     candidates.append(('full_build', full_build_et))
 
             if not candidates:
-                # Ищем следующее ближайшее событие
+                # Все события сегодня прошли — ищем ближайшие события следующего дня.
+                # Важно: включаем telegram (14:00) чтобы он не пропускался при перезапуске сервера.
                 check = now_et + pd.Timedelta(days=1)
                 for _ in range(7):
                     check_day = check.normalize()
-                    if check.dayofweek < 5:
-                        candidates.append(('fast_scan', check_day + pd.Timedelta(hours=15, minutes=15)))
+                    cdow = check.dayofweek
+                    if cdow < 5:  # Пн-Пт
+                        candidates.append(('telegram',     check_day + pd.Timedelta(hours=14, minutes=0)))
+                        candidates.append(('fast_scan',    check_day + pd.Timedelta(hours=15, minutes=15)))
+                        candidates.append(('incremental',  check_day + pd.Timedelta(hours=16, minutes=30)))
+                        candidates.append(('screener',     check_day + pd.Timedelta(hours=23, minutes=0)))
                         break
-                    elif check.dayofweek == 6:
-                        candidates.append(('full_build', check_day + pd.Timedelta(hours=10, minutes=0)))
+                    elif cdow == 5:  # Суббота
+                        candidates.append(('screener', check_day + pd.Timedelta(hours=23, minutes=0)))
+                        break
+                    elif cdow == 6:  # Воскресенье
+                        candidates.append(('screener',    check_day + pd.Timedelta(hours=8,  minutes=0)))
+                        candidates.append(('full_build',  check_day + pd.Timedelta(hours=10, minutes=0)))
                         break
                     check += pd.Timedelta(days=1)
 
