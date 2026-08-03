@@ -2163,7 +2163,7 @@ def auto_refresh_background():
     global background_thread_stop
 
     et_tz = zoneinfo.ZoneInfo("America/New_York")
-    print("[AUTO-REFRESH] Started. Schedule: fast 15:15 + incremental 16:30 (Mon-Fri), screener 23:00 (daily), full rebuild Sun 10:00 ET")
+    print("[AUTO-REFRESH] Started. Schedule: telegram 14:00 + fast 15:15 + incremental 16:30 (Mon-Fri ET), screener 23:00 ET (daily), full rebuild Sun 10:00 ET")
 
     while not background_thread_stop:
         try:
@@ -2202,8 +2202,7 @@ def auto_refresh_background():
                     candidates.append(('full_build', full_build_et))
 
             if not candidates:
-                # Все события сегодня прошли — ищем ближайшие события следующего дня.
-                # Важно: включаем telegram (14:00) чтобы он не пропускался при перезапуске сервера.
+                # Все события сегодня прошли — планируем на следующий будний день.
                 check = now_et + pd.Timedelta(days=1)
                 for _ in range(7):
                     check_day = check.normalize()
