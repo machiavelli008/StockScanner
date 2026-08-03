@@ -13,7 +13,6 @@ import json
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 import screener as screener_module
-import analyzer as analyzer_module
 
 # Ленивый импорт yfinance - только когда нужен
 def get_yfinance():
@@ -1392,26 +1391,6 @@ def get_active_tickers():
     """Возвращает текущий активный список тикеров."""
     return screener_module.load_active_tickers()
 
-
-@app.get("/api/analyze")
-@app.post("/api/analyze")
-def analyze_signals():
-    """Агент: анализирует 10 случайных акций по EMA 20/50/200 daily+weekly, ищет аномалии."""
-    import urllib.request, urllib.parse
-
-    findings = analyzer_module.run_analysis(
-        signals_path=SIGNALS_JSON_PATH,
-        find_touch_fn=find_touch_events,
-        calc_ema_fn=calculate_ema,
-        calc_atr_fn=calculate_atr,
-        normalize_fn=normalize_ohlc_columns,
-        get_yf_fn=get_yfinance,
-    )
-
-    if not findings:
-        return {"status": "ok", "detail": "Аномалий не найдено"}
-
-    return {"status": "ok", "findings": findings}
 
 
 @app.get("/api/telegram/debug")
