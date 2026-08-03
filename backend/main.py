@@ -1411,23 +1411,6 @@ def analyze_signals():
     if not findings:
         return {"status": "ok", "detail": "Аномалий не найдено"}
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-
-    if bot_token and chat_id:
-        now_str = pd.Timestamp.now("Europe/Moscow").strftime("%b %d, %Y")
-        text = f"🔍 Анализ логики — {now_str}\n\n" + "\n\n".join(findings)
-        if len(text) > 4096:
-            text = text[:4090] + "..."
-        url  = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-        try:
-            req = urllib.request.Request(url, data=data, method="POST")
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                json.loads(resp.read())
-        except Exception:
-            pass
-
     return {"status": "ok", "findings": findings}
 
 
