@@ -60,7 +60,7 @@ AUTO_REFRESH_INTERVAL_SECONDS = 300  # Автообновление каждые
 background_thread_stop = False  # Флаг для остановки фонового потока
 # На Vercel отключаем startup refresh (таймаут), но включаем по требованию
 ENABLE_STARTUP_REFRESH = os.getenv("ENABLE_STARTUP_REFRESH", "0") == "1" if not os.getenv("VERCEL") else False
-ENABLE_BACKGROUND_REFRESH = os.getenv("ENABLE_BACKGROUND_REFRESH", "1") == "1" if not os.getenv("VERCEL") else False
+ENABLE_BACKGROUND_REFRESH = os.getenv("ENABLE_BACKGROUND_REFRESH", "0") == "1" if not os.getenv("VERCEL") else False
 SERVER_PORT = int(os.getenv("PORT", "8001"))
 
 DEFAULT_TICKERS = ["MSFT", "AAPL", "GOOGL", "TSLA", "AMZN"]
